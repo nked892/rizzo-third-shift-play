@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>The Rizzo — Third Shift</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./style.css">
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
+</head><body>
+<canvas id="c"></canvas>
+<div id="hud" class="hidden">
+  <div id="rec"><span class="dot"></span>REC</div>
+  <div id="stamp"><span id="date">DEC 24 2026</span><br><span id="clock">11:00:00 PM</span></div>
+  <div id="cam">ENG-PHONE · CAM 1 · SD</div>
+  <div id="battery"><div id="batfill"></div></div>
+  <div id="frost"></div>
+  <div id="crosshair"></div>
+  <div id="prompt"></div>
+  <div id="holdbar"><div id="holdfill"></div></div>
+  <div id="objective"></div>
+  <div id="tickets"></div>
+  <div id="blink"><div class="lbl">BLINK</div><div id="blinkbar"><div id="blinkfill"></div></div></div>
+  <div id="sprint"><div id="sprintfill"></div></div>
+  <div id="sub"></div>
+  <div id="toast"></div>
+</div>
+<div id="title" class="screen">
+  <div class="inner">
+    <div class="sm">RECOVERED FOOTAGE · ENGINEERING DEPT. WORK PHONE</div>
+    <h1>THE RIZZO</h1><h2>THIRD SHIFT</h2>
+    <div class="sm">Paul J. Rizzo Conference Center · Chapel Hill, NC · Christmas Eve · 11:00 PM – 7:00 AM</div>
+    <button id="start">CLICK TO CLOCK IN</button>
+    <div class="keys">WASD move · Mouse look · SHIFT run · E use (hold for repairs) · SPACE blink (hold to keep eyes shut) · F flashlight · ESC pause<br>Q or RIGHT MOUSE (hold, at a closed door) peek through the crack</div>
+    <div class="credit">SCP-173 concept from the SCP Wiki (scp-wiki.wikidot.com/scp-173), licensed CC BY-SA 3.0. This is a fan work.<br>
+    The Rizzo Center is a real place; this game is an unofficial fan tribute and is not affiliated with or endorsed by it. All art, models and sounds are original and generated in code.</div>
+  </div>
+</div>
+<div id="pause" class="screen hidden"><div class="inner"><h2>PAUSED</h2><div class="keys">WASD move · SHIFT run · E use / hold to repair · SPACE blink · F flashlight · Q / RIGHT MOUSE hold to peek through a closed door</div><button id="resume">RESUME</button><button id="restart">RESTART SHIFT</button>
+  <div class="credit">SCP-173 concept from the SCP Wiki, CC BY-SA 3.0. Unofficial fan tribute, not affiliated with The Rizzo Center.</div></div></div>
+<div id="dead" class="screen hidden"><div class="inner"><div class="nosig">NO SIGNAL</div><div class="sm" id="deadmsg"></div><button id="retry">RETRY FROM CHECKPOINT</button><button id="restart2">RESTART SHIFT</button></div></div>
+<div id="end" class="screen hidden"><div class="inner"><div class="sm">END OF RECOVERED FOOTAGE — TAPE 1</div><h2>THIRD SHIFT</h2>
+  <p id="endtxt"></p><button id="again">PLAY AGAIN</button>
+  <div class="credit">SCP-173 concept from the SCP Wiki (scp-wiki.wikidot.com/scp-173), CC BY-SA 3.0.<br>All art, models and sounds original and generated in code. Unofficial fan tribute, not affiliated with or endorsed by The Rizzo Center.</div></div></div>
+<div id="cut" class="hidden"></div>
+<script type="module" src="./src/main.js"></script>
+</body></html>
