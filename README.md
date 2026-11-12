@@ -18,7 +18,9 @@ WASD move · mouse look · SHIFT run · E use / HOLD E for repairs · SPACE blin
 Q or RIGHT MOUSE (hold, next to a closed door): peek through the crack. 173 can't move while you see it through the gap; E throws the door open.
 
 ## The shift
-1. Loading dock: clock in at the time clock (hold E).
+1. 10:58 PM, Christmas Eve, loading dock. Clint, the chief engineer, is waiting at the time clock, smoking, and he is not happy:
+   he's been here since six and had to cover second shift. He hands off the building, grumbles, and walks out the employee-lot door.
+   Once he's gone, clock in at the time clock (hold E).
 2. Maintenance office just inside the dock: take the radio + flashlight. Dee (night audit) radios in two tickets.
 3. WO-4471: McLean guest pantry ice machine leak: pull the panel, clear the drain, mop.
 4. WO-4472: Stair B landing light: grab a ballast from the shop shelf, drop the lens, swap the ballast.
@@ -47,11 +49,15 @@ Checkpoints: power-out (A), breaker (B), after the slam in the bar (E), back in 
   audio). Radio lines are radio-processed; her in-person lines at the front desk use a light room treatment instead (no radio hiss).
   Not a recording or clone of any real person. Files in `audio/dee/` (d* = radio, l* = in person), map in `src/dee-lines.js`.
   Dee in the lobby is a stylized figure built from simple shapes, not a likeness of anyone.
+- Clint's voice: synthetic, generated offline with Piper TTS (voice `en_US-joe-medium`, CC0 dataset), with a light in-person dock-room
+  treatment (not radio). Not a recording or clone of any real person. Files in `audio/clint/`, map in `src/clint-lines.js`.
+  Clint on the dock is a stylized figure built from simple shapes (heavyset, bald, blue short-sleeve work shirt, black pants, cigarette), not a likeness.
 - The Rizzo Center is a real place; layout is a compressed, inspired-by interpretation. Not affiliated or endorsed.
 - Three.js (MIT), see vendor/THREE-LICENSE.
 
 ## Dev
 - `node shoot.mjs "http://localhost:8123/?shots" '<json>'`: screenshots from given positions.
-- `node walk.mjs`: headless end-to-end test of the whole shift (clock-in → WOs → DuBose → death/retry → breaker → sewing room haunt → slam → death/retry E → hide/peek → McLean WO-4474 → death/retry F → 6:51 front desk → radio + keys → blackout → death/retry G → chase → MDP-1 → end card).
+- `node walk.mjs`: headless end-to-end test of the whole shift (Clint → clock-in → WOs → DuBose → death/retry → breaker → sewing room haunt → slam → death/retry E → hide/peek → McLean WO-4474 → death/retry F → 6:51 front desk → radio + keys → blackout → death/retry G → chase → MDP-1 → end card).
+- `node clint-test.mjs`: focused test of the 10:58 opening (Clint on the dock, clock-in held, grumble, exit through the lot door, clock-in opens, 7/7 takes voiced). `SHOTS=1` writes `screenshots/clint-*.png`.
 - `node ending-test.mjs`: focused test of the 6:51 ending (desk state, turn-in, Merry Christmas, blackout threshold, no answer from Dee, flicker + song, fair-bot run, MDP-1, end card, checkpoint G retries). `SHOTS=1` writes `screenshots/ending-*.png`. `URL=` picks the server.
 - Lady DuBose's haunt is audio + atmosphere only: an original synthesized hummed lullaby (not any existing song/carol), a single short distant cry, cold, an empty bar, slamming doors. Nothing is shown. The same lullaby follows 173 during the 6:51 blackout.

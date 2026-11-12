@@ -7,6 +7,7 @@ import { makeStatue } from './statue.js';
 
 const DEE = 'DEE (NIGHT AUDIT)';
 const ME = 'YOU';
+const CLINT = 'CLINT'; // chief engineer, in person on the dock at 10:58 PM (positional, never radio)
 const DEE_LIVE = 'DEE'; // in person at the front desk (not radio-processed, positional from her chair)
 const DESK_SPAWN = { x: 1.5, z: -25.6, yaw: Math.PI, pitch: -0.1 }; // guest side of the front desk, facing Dee
 const CHASE_START = { x: 1.5, z: -30.85, yaw: -Math.PI / 2 }; // checkpoint G: McLean hall just outside the lobby doors, facing east
@@ -22,9 +23,9 @@ const LURKS = [[52.6, -48.6], [63.5, -31.5], [56, -37], [55, -27.5], [71, -27], 
 export class Story {
   constructor(g) {
     this.g = g; const W = this.W = g.W;
-    this.f = { clocked: false, radio: false, wo1: 0, wo2: 0, ballast: false, key: false, phase: 'clockin', teased: false, suiteT: 0, power: true, breaker: false, ended: false, thermo: false, rad: false, cried: false, ptac: 0,
+    this.f = { clint: 0, clocked: false, radio: false, wo1: 0, wo2: 0, ballast: false, key: false, phase: 'clockin', teased: false, suiteT: 0, power: true, breaker: false, ended: false, thermo: false, rad: false, cried: false, ptac: 0,
       radioIn: false, keysIn: false, mainPower: true, mdp: 0 };
-    this.tickets = []; this.queue = []; this.subT = 0; this.cp = null; this.timers = []; this.cold = 0; this.puffs = []; this.puffT = 0; this.rock = { amp: 0, t: 0 }; this.peekDoor = null; this.voiceStats = { voiced: 0, fallback: 0, liveVoiced: 0, liveFallback: 0, radioAfterTurnIn: 0 }; this.ch = null;
+    this.tickets = []; this.queue = []; this.subT = 0; this.cp = null; this.timers = []; this.cold = 0; this.puffs = []; this.puffT = 0; this.rock = { amp: 0, t: 0 }; this.peekDoor = null; this.voiceStats = { voiced: 0, fallback: 0, liveVoiced: 0, liveFallback: 0, radioAfterTurnIn: 0, clintVoiced: 0, clintFallback: 0 }; this.smoke = []; this.smokeT = 0; this.cl = null; this.ch = null;
     // statue
     this.statue = makeStatue(g.T); this.statue.visible = false; this.statue.position.set(0, -50, 0); g.scene.add(this.statue);
     this.S = { active: false, hunting: false, seen: false, moved: false, bashT: 0, bashTick: 0, seenEver: false };
@@ -38,7 +39,9 @@ export class Story {
   addInteractions() {
     const W = this.W, f = this.f, g = this.g;
     const add = o => W.interact.push(o);
-    add({ mesh: W.timeclockMesh, range: 2.2, hold: 0.7, enabled: () => !f.clocked, prompt: () => 'Clock in — swipe badge',
+    add({ mesh: W.timeclockMesh, range: 2.2, enabled: () => !f.clocked && f.clint < 2, prompt: () => 'Time clock — let Clint finish', use: () => g.hud.toast('He\'s been here since six. Let him say his piece.', 2.5) });
+    add({ mesh: W.clintPick, range: 2.4, enabled: () => f.clint === 0, prompt: () => 'Clint — chief engineer', use: () => g.hud.toast('He\'s not in the mood.', 2) });
+    add({ mesh: W.timeclockMesh, range: 2.2, hold: 0.7, enabled: () => !f.clocked && f.clint >= 2, prompt: () => 'Clock in — swipe badge',
       use: () => { f.clocked = true; g.sound.punch(); g.hud.toast('IN  ' + this.clockStr() + '   ·   ENGINEERING / 3RD SHIFT', 3.5);
         this.say([[ME, 'Clocked in. Radio\'s on the charger in the shop.', 2.6]]); f.phase = 'radio'; this.obj('Grab your radio — maintenance office, just inside the dock'); } });
     add({ mesh: W.radioPick, range: 2.2, enabled: () => !f.radio && !f.radioIn, prompt: () => f.clocked ? 'Take radio + flashlight' : 'Radio (clock in first)',
@@ -133,16 +136,77 @@ export class Story {
   // ---------------- lifecycle ----------------
   start() {
     const g = this.g, s = g.sound, W = this.W;
-    g.setView(4, 6.5, 1.25, 0); g.hud.tickets([]);
-    this.obj('Clock in — time clock on the dock wall');
+    g.setView(4, 6.5, Math.atan2(4 - 1.2, 6.5 - 4.75), 0.02); g.hud.tickets([]);
+    this.obj('');
     s.hum(new THREE.Vector3(5, 4.6, 6), 0.05); s.hum(new THREE.Vector3(11.5, 4.6, 4), 0.05); s.hum(new THREE.Vector3(3, 2.6, -2.5), 0.035);
     s.hum(new THREE.Vector3(9.2, 2.9, -6), 0.03); s.hum(new THREE.Vector3(9.2, 2.9, -18), 0.04); s.hum(new THREE.Vector3(9.2, 2.9, -26), 0.03); s.hum(new THREE.Vector3(16, 2.7, -27.5), 0.03);
     s.drone(W.anchors.ice, 0.09); this.dripLoop = s.drip(W.anchors.ice);
     this.clockLoop = s.clock(W.anchors.clock); this.tv = s.staticLoop(W.anchors.tv, 0.07); this.tvOn = true;
     this.scrape = s.statueLoop(); this.rattleT = 6;
     this.setGroup('dubose', true, 0.7, 0.02);
-    setTimeout(() => this.say([[ME, '10:58. Badge first, then the shop.', 2.4]]), 900);
+    this.clintStart();
   }
+  // ---------------- 10:58 PM: Clint on the dock (covered second shift; wants to go home) ----------------
+  clintStart() {
+    const W = this.W, f = this.f; f.clint = 0; W.clint.visible = true; W.placeClint(1.2, 4.75, Math.atan2(4 - 1.2, 6.5 - 4.75)); W.clintCol.disabled = false; W.clintCig.visible = true;
+    this.cl = { t: 0, drag: 0.15, pose: 0, walk: null }; // mid-smoke when you walk up
+    this.after(1.3, () => this.say([[CLINT, 'About time. I\'ve been here since six this morning.', 3.4], [CLINT, 'Second shift called out, so guess who got to cover it. On Christmas Eve, no less.', 5.6], [ME, 'Sorry, chief.', 1.4],
+      [CLINT, 'The McLean pantry ice machine\'s leaking again. I threw a towel under it. That\'s yours now.', 6.4], [CLINT, 'Dee\'s on the desk tonight. She\'ll radio you. Radio\'s on the charger in the shop.', 6.0], [ME, 'Got it.', 1.1],
+      [CLINT, 'I\'m going home. Don\'t call me.', 2.4]], () => this.clintLeave()));
+  }
+  clintLeave() {
+    const g = this.g, W = this.W, f = this.f; if (f.clint) return; f.clint = 1; W.clintCol.disabled = true;
+    // drops the butt and steps on it
+    const butt = this._butt || (this._butt = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.03, 6), new THREE.MeshBasicMaterial({ color: 0xff5a14 })));
+    W.clintCig.visible = false; const p0 = W.clint.position; butt.position.set(p0.x + 0.25, 0.006, p0.z + 0.15); butt.rotation.z = Math.PI / 2; g.scene.add(butt); butt.visible = true; this.cl.butt = 1.4;
+    this.cl.walk = { pts: [[2.0, 5.4], [7.0, 6.3], [12.2, 9.9], [15.3, 10.3], [16.55, 10.3]], i: 0, ph: 0, said: false, door: false };
+  }
+  clintGone() {
+    const g = this.g, W = this.W, f = this.f; if (f.clint >= 2) return; f.clint = 2; this.cl && (this.cl.walk = null);
+    W.clint.visible = false; W.clintCol.disabled = true; if (W.doors.lotDoor.open) { W.doors.lotDoor.setOpen(false, false); g.sound.ctx && g.sound.slam(new THREE.Vector3(15.95, 1.1, 10.3)); }
+    this.obj('Clock in — time clock on the dock wall'); this.say([[ME, '...Badge first, then the shop.', 2.2]]);
+  }
+  updateClint(dt) {
+    const g = this.g, W = this.W, f = this.f, C = this.cl, G = W.clint; if (!C || f.clint >= 2 || !G.visible) return;
+    C.t += dt; const p = g.player.pos, R = W.clintArmR, Lf = W.clintArmL, H = W.clintHead; const lerp = (a, b, k) => a + (b - a) * Math.min(1, dt * k);
+    if (C.butt > 0) { C.butt -= dt; this._butt.material.color.setRGB(0.3 + Math.max(0, C.butt) * 0.5, 0.15 + Math.max(0, C.butt) * 0.1, 0.1); if (C.butt <= 0) this._butt.material.color.setRGB(0.85, 0.82, 0.76); }
+    if (!C.walk) {
+      // smoking: a drag every ~7 s, only between his lines; exhale a second later
+      const talking = this.subT > 0 && this.curWho === CLINT;
+      if (!talking) C.drag -= dt; if (C.drag <= 0 && !talking && C.pose === 0) { C.pose = 1; C.poseT = 1.5; }
+      if (C.pose === 1) { C.poseT -= dt; if (C.poseT <= 0) { C.pose = 0; C.drag = 6 + Math.random() * 3; C.exhale = 0.7; } }
+      if (C.exhale > 0) { C.exhale -= dt; if (C.exhale <= 0) this.exhale(); }
+      const up = C.pose === 1; R.S.rotation.x = lerp(R.S.rotation.x, up ? -0.75 : -0.1, 6); R.S.rotation.z = lerp(R.S.rotation.z, up ? -0.42 : 0.16, 6); R.E.rotation.x = lerp(R.E.rotation.x, up ? -2.2 : -1.15, 6); R.E.rotation.z = lerp(R.E.rotation.z, up ? -0.5 : 0, 6);
+      Lf.S.rotation.x = lerp(Lf.S.rotation.x, 0.05, 4); Lf.S.rotation.z = lerp(Lf.S.rotation.z, -0.12, 4); Lf.E.rotation.x = lerp(Lf.E.rotation.x, -0.15, 4);
+      const e = W.clintEmber.material.color; const glow = up && C.poseT < 1.1 ? 1 : 0.55 + Math.sin(C.t * 7) * 0.05; e.setRGB(glow, 0.25 * glow + 0.05, 0.02);
+      // looks at you while he talks (head only), shifts his weight
+      const hp = W.anchors.clintHead; const yaw = Math.atan2(p.x - G.position.x, p.z - G.position.z) - G.rotation.y; const ty = Math.max(-0.7, Math.min(0.7, Math.atan2(Math.sin(yaw), Math.cos(yaw))));
+      H.rotation.order = 'YXZ'; H.rotation.y = lerp(H.rotation.y, ty, 3); H.rotation.x = lerp(H.rotation.x, up ? -0.12 : 0.04, 4); G.position.y = Math.sin(C.t * 0.9) * 0.006;
+      this.smokeT -= dt; if (this.smokeT <= 0) { this.smokeT = 0.16; const ep = W.clintEmber.getWorldPosition(new THREE.Vector3()); this.puffSmoke(ep, new THREE.Vector3((Math.random() - 0.5) * 0.04, 0.22, (Math.random() - 0.5) * 0.04), 2.6, 0.03, 0.3); }
+    } else {
+      const Wk = C.walk, tgt = Wk.pts[Math.min(Wk.i, Wk.pts.length - 1)]; const dx = tgt[0] - G.position.x, dz = tgt[1] - G.position.z, d = Math.hypot(dx, dz); const sp = 1.15;
+      if (Wk.i === 3 && !Wk.door && d < 1.4) { Wk.door = true; W.doors.lotDoor.setOpen(true); } // push bar, the door swings out
+      if (Wk.done) { const by = Math.atan2(p.x - G.position.x, p.z - G.position.z); G.rotation.y = lerp(G.rotation.y, Wk.ry + Math.atan2(Math.sin(by - Wk.ry), Math.cos(by - Wk.ry)) * 0.45, 2.5); W.clintLegs[0].rotation.x = lerp(W.clintLegs[0].rotation.x, 0, 6); W.clintLegs[1].rotation.x = lerp(W.clintLegs[1].rotation.x, 0, 6); W.placeClint(G.position.x, G.position.z, G.rotation.y); W.clintCol.disabled = true; return; } // half turns back, outside
+      if (Wk.i === 3 && Wk.door && d < 1.0 && W.doors.lotDoor.angle < 1.0) { /* waits on the door */ }
+      else if (d < 0.05) { Wk.i++; if (Wk.i >= Wk.pts.length) { if (Wk.exit) { this.clintGone(); return; } Wk.done = true; Wk.ry = G.rotation.y; // stops in the doorway, half turns back
+        this.after(0.3, () => this.say([[ME, 'Night, Clint. Merry Christmas.', 2.0], [CLINT, 'Yeah. Merry Christmas.', 2.0]], () => { if (this.cl) this.cl.walk = { pts: [[18.6, 10.3]], i: 0, ph: 0, said: true, door: true, exit: true }; })); return; } }
+      else { const m = Math.min(d, sp * dt); G.position.x += dx / d * m; G.position.z += dz / d * m; G.rotation.y = lerp(G.rotation.y, Math.atan2(dx, dz), 5); }
+      Wk.ph += dt * 5.2; const sw = Math.sin(Wk.ph) * 0.42; W.clintLegs[0].rotation.x = sw; W.clintLegs[1].rotation.x = -sw; G.position.y = Math.abs(Math.cos(Wk.ph)) * 0.025;
+      R.S.rotation.x = lerp(R.S.rotation.x, sw * 0.5, 8); R.S.rotation.z = lerp(R.S.rotation.z, 0.05, 6); R.E.rotation.x = lerp(R.E.rotation.x, -0.25, 6); R.E.rotation.z = lerp(R.E.rotation.z, 0, 6); Lf.S.rotation.x = lerp(Lf.S.rotation.x, -sw * 0.5, 8); Lf.E.rotation.x = lerp(Lf.E.rotation.x, -0.25, 6);
+      H.rotation.y = lerp(H.rotation.y, 0, 3); H.rotation.x = lerp(H.rotation.x, 0.12, 3); // head down, done
+      if (!Wk.said && Wk.i >= 2) { Wk.said = true; this.say([[CLINT, 'Second shift. On Christmas Eve. Unbelievable.', 3.6]]); }
+      W.placeClint(G.position.x, G.position.z, G.rotation.y); W.clintCol.disabled = true;
+    }
+  }
+  exhale() { const W = this.W, G = W.clint; const hp = W.anchors.clintHead; const fw = new THREE.Vector3(Math.sin(G.rotation.y + W.clintHead.rotation.y), 0, Math.cos(G.rotation.y + W.clintHead.rotation.y));
+    for (let i = 0; i < 7; i++) { const o = hp.clone().addScaledVector(fw, 0.2); o.y -= 0.1; this.puffSmoke(o, fw.clone().multiplyScalar(0.35 + Math.random() * 0.2).add(new THREE.Vector3((Math.random() - 0.5) * 0.1, 0.06 + Math.random() * 0.08, (Math.random() - 0.5) * 0.1)), 2.4, 0.06, 0.36); } }
+  puffSmoke(pos, vel, life, s0, op) {
+    const g = this.g; let q = this.smoke.find(q => q.life <= 0);
+    if (!q) { if (this.smoke.length > 60) return; const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: g.T.puff, color: 0xc4c8cc, transparent: true, depthWrite: false, opacity: 0 })); g.scene.add(sp); q = { s: sp, v: new THREE.Vector3(), life: 0 }; this.smoke.push(q); }
+    q.s.position.copy(pos); q.v.copy(vel); q.life = q.max = life; q.s0 = s0; q.op = op; q.s.visible = true;
+  }
+  updateSmoke(dt) { for (const q of this.smoke) { if (q.life <= 0) continue; q.life -= dt; const k = 1 - q.life / q.max; q.v.multiplyScalar(1 - dt * 0.8); q.v.y += dt * 0.05; q.v.x += (Math.random() - 0.5) * dt * 0.08;
+    q.s.position.addScaledVector(q.v, dt); q.s.scale.setScalar(q.s0 + k * 0.32); q.s.material.opacity = q.op * Math.pow(1 - k, 1.3) * Math.min(1, k * 8); if (q.life <= 0) q.s.visible = false; } }
   restart() { location.reload(); }
 
   // ---------------- DuBose beats ----------------
@@ -573,12 +637,15 @@ export class Story {
     const g = this.g, f = this.f, W = this.W, p = g.player.pos;
     // radio queue
     if (this.subT > 0) { this.subT -= dt; if (this.subT <= 0) g.hud.sub('', ''); }
-    if (this.subT <= 0 && this.queue.length) { const q = this.queue.shift(); if (q.fn) q.fn(); else { g.hud.sub(q.who, q.text); this.subT = q.dur + 0.4;
+    if (this.subT <= 0 && this.queue.length) { const q = this.queue.shift(); if (q.fn) q.fn(); else { g.hud.sub(q.who, q.text); this.subT = q.dur + 0.4; this.curWho = q.who;
       if (q.who === DEE && g.sound.ctx) { if (f.radioIn) this.voiceStats.radioAfterTurnIn++; const vd = g.sound.voice(q.text); // Dee's recorded radio take; subtitle holds for its real length
         if (vd) { this.subT = vd + 0.3; this.voiceStats.voiced++; } else { g.sound.radio(q.dur * 0.85); this.voiceStats.fallback++; } }
+      else if (q.who === CLINT) { const vd = g.sound.ctx ? g.sound.voice(q.text, { pos: W.anchors.clintHead }) : 0; // in person on the dock: never radio, no squelch fallback
+        if (vd) { this.subT = vd + 0.3; this.voiceStats.clintVoiced++; } else this.voiceStats.clintFallback++; }
       else if (q.who === DEE_LIVE) { const vd = g.sound.ctx ? g.sound.voice(q.text, { pos: W.anchors.deeHead }) : 0; // in person: from her chair, never through the radio
         if (vd) { this.subT = vd + 0.3; this.voiceStats.liveVoiced++; } else this.voiceStats.liveFallback++; } } } // missing take: subtitle only, no squelch
     this.updateBlink(dt);
+    this.updateClint(dt); this.updateSmoke(dt);
     // doors animate
     for (const d of W.doors) { const tgt = d.peekA && !d.open ? d.peekA : d.target; if (d.open) d.peekA = 0; d.angle += (tgt - d.angle) * Math.min(1, dt * (d.peekA ? 9 : 7)); d.pivot.rotation.y = d.angle; d.pivot.updateMatrixWorld(true); }
     // scheduled beats (story time, so they pause with the game)

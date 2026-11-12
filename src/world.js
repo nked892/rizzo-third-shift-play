@@ -207,7 +207,7 @@ export function buildWorld(scene, T) {
   // =====================================================================
   // LOADING DOCK  x[0,16] z[0,12]
   // =====================================================================
-  room({ x0: 0, z0: 0, x1: 16, z1: 12, h: 5.5, floor: M.concrete, wall: M.block, base: M.hazard, casing: M.darkSteel, open: { n: [[2.4, 3.4, 2.2], [8, 10.4, 2.6]] }, surface: 'concrete' });
+  room({ x0: 0, z0: 0, x1: 16, z1: 12, h: 5.5, floor: M.concrete, wall: M.block, base: M.hazard, casing: M.darkSteel, open: { n: [[2.4, 3.4, 2.2], [8, 10.4, 2.6]], e: [[9.8, 10.8, 2.2]] }, surface: 'concrete' });
   W.groups.dock = [];
   { const v1 = light(5, 4.6, 6, 0xd8e6ff, 9, { dist: 14, group: 'dock' }), v2 = light(11.5, 4.6, 4, 0xd8e6ff, 8, { dist: 14, flicker: 0.15, group: 'dock' });
     for (const [x, z, v] of [[5, 6, v1], [11.5, 4, v2]]) { troffer(x, 4.7, z, v, 2.4); deco(x - 0.01, 4.75, z - 0.01, x + 0.01, 5.5, z + 0.01, M.black); }
@@ -244,6 +244,65 @@ export function buildWorld(scene, T) {
   label(9.2, 2.85, 0.12, 2.0, 0.3, ['ENGINEERING  ·  McLEAN HALL  →'], { w: 512, h: 64, size: 30, bg: '#1d2a44', fg: '#e8e4d8' }, 0);
   label(2.9, 2.4, 0.12, 1.1, 0.22, ['MAINTENANCE'], { w: 256, h: 48, size: 28, bg: '#1d2a44', fg: '#e8e4d8', bold: true }, 0);
   W.surfaces.push({ x0: 0, x1: 16, z0: 0, z1: 12, s: 'concrete' });
+  // ---- employee lot door (east wall): Clint's way out at 10:58. Steel man door, locked for you all night. ----
+  W.doors.lotDoor = door(15.95, 10.3, 'z', 1.0, { swing: 1, mat: L(T.concrete, 1, 0x56606a), locked: true, name: 'lot', lockedMsg: 'Employee lot. You\'re on till seven.' });
+  label(15.84, 2.45, 10.3, 0.9, 0.2, ['EXIT · EMPLOYEE LOT'], { w: 256, h: 56, size: 24, bg: '#7a1410', fg: '#f2efe6', bold: true }, -Math.PI / 2);
+  deco(15.82, 1.0, 10.62, 15.86, 1.06, 10.74, M.darkSteel); // push bar
+  { // outside: a slab of the lot under a sodium light, then night
+    box(16, -0.1, 8.9, 20.0, 0, 11.7, L(T.concrete, 1, 0x3a3a3e), { solid: false });
+    const night = C(0x05070c, { emissive: 0x030409 });
+    box(19.9, 0, 8.9, 20.0, 4, 11.7, night); box(16, 0, 8.8, 20.0, 4, 8.9, night); box(16, 0, 11.7, 20.0, 4, 11.8, night); box(16, 3.2, 8.9, 20.0, 3.3, 11.7, night, { solid: false });
+    for (const [z, c] of [[9.4, 0xffa040], [11.1, 0xffb050]]) { const m = glowMat(c); deco(19.88, 1.6 + Math.random() * 0.6, z, 19.9, 1.7 + Math.random() * 0.6, z + 0.12, m); } // far lot poles
+    light(17.3, 3.0, 10.3, 0xffa860, 2.6, { dist: 6, group: 'dock' }); const sod = glowMat(0xffb060); deco(17.1, 3.05, 10.15, 17.5, 3.15, 10.45, sod); W.vlights[W.vlights.length - 1].fixtures.push(sod);
+    W.anchors.lot = new THREE.Vector3(17.6, 0, 10.3);
+    W.colliders.push({ x0: 16.05, x1: 16.5, z0: 9.75, z1: 10.85, y0: 0, y1: 2.3 }); } // you never follow him out (the door is his, not yours)
+  // ---- Clint: chief engineer, waiting at the time clock to go home. Stylized, simple shapes, no likeness:
+  //      heavyset, bald, blue short-sleeve button-down work shirt, black pants, cigarette. Faces +z locally. ----
+  { const G = W.clint = new THREE.Group(); scene.add(G);
+    const skin = C(0xc58f6c), shirt = C(0x3e6496), shirtD = C(0x2f4e78), pants = C(0x16161a), shoe = C(0x0b0b0c), belt = C(0x231a14), brow = C(0x5a3a28);
+    const B = (x0, y0, z0, x1, y1, z1, m, p = G) => box(x0, y0, z0, x1, y1, z1, m, { parent: p, solid: false, occ: false });
+    const sph = (r, m, x, y, z, sx = 1, sy = 1, sz = 1, p = G) => { const o = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), m); o.position.set(x, y, z); o.scale.set(sx, sy, sz); p.add(o); return o; };
+    const limb = (len, r0, r1, m, p) => { const c = new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, len, 10), m); c.position.y = -len / 2; p.add(c); return c; };
+    // legs (hip pivots, for the walk out)
+    W.clintLegs = [];
+    for (const sx of [-1, 1]) { const hip = new THREE.Group(); hip.position.set(sx * 0.125, 0.9, 0); G.add(hip); limb(0.84, 0.12, 0.1, pants, hip);
+      B(-0.075, -0.9, -0.09, 0.075, -0.82, 0.19, shoe, hip); W.clintLegs.push(hip); }
+    // belt + heavy middle
+    const beltM = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.27, 0.07, 16), belt); beltM.scale.z = 0.9; beltM.position.set(0, 0.93, 0.02); G.add(beltM);
+    B(-0.04, 0.905, 0.25, 0.04, 0.955, 0.265, C(0x9a8a60)); // buckle
+    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.265, 0.285, 0.6, 16), shirt); torso.scale.z = 0.8; torso.position.set(0, 1.25, 0); G.add(torso);
+    sph(0.29, shirt, 0, 1.1, 0.05, 1.0, 0.82, 0.88); // belly, shirt stretched over it
+    for (const sx of [-1, 1]) sph(0.115, shirt, sx * 0.265, 1.49, 0, 1, 0.8, 1); // shoulders
+    // collar, placket + buttons, chest pocket + pen, name patch
+    for (const sx of [-1, 1]) { const c = B(-0.06, -0.025, -0.012, 0.06, 0.025, 0.012, shirtD); c.position.set(sx * 0.06, 1.55, 0.17); c.rotation.z = sx * 0.5; c.rotation.x = -0.3; }
+    B(-0.016, 1.33, 0.205, 0.016, 1.53, 0.217, shirtD); for (let i = 0; i < 3; i++) sph(0.009, C(0xe8e8e0), 0, 1.36 + i * 0.065, 0.219);
+    B(0.06, 1.33, 0.2, 0.16, 1.43, 0.212, shirtD); const pen = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.09, 6), C(0x111111)); pen.position.set(0.085, 1.42, 0.214); G.add(pen);
+    { const cv = document.createElement('canvas'); cv.width = 128; cv.height = 48; const x = cv.getContext('2d'); x.fillStyle = '#f2efe6'; x.beginPath(); x.ellipse(64, 24, 62, 22, 0, 0, Math.PI * 2); x.fill();
+      x.strokeStyle = '#b3261e'; x.lineWidth = 4; x.stroke(); x.fillStyle = '#b3261e'; x.font = 'italic bold 26px Georgia, serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('Clint', 64, 25);
+      const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; const pm = new THREE.Mesh(new THREE.PlaneGeometry(0.11, 0.042), new THREE.MeshLambertMaterial({ map: t, transparent: true })); pm.position.set(-0.11, 1.4, 0.208); G.add(pm); }
+    // arms: shoulder group -> short blue sleeve + bare upper arm -> elbow group -> forearm + hand
+    const arm = (sx) => { const S = new THREE.Group(); S.position.set(sx * 0.31, 1.48, 0); G.add(S);
+      const sl = new THREE.Mesh(new THREE.CylinderGeometry(0.088, 0.082, 0.18, 10), shirt); sl.position.y = -0.07; S.add(sl);
+      const up = new THREE.Mesh(new THREE.CylinderGeometry(0.066, 0.06, 0.16, 10), skin); up.position.y = -0.21; S.add(up);
+      const E = new THREE.Group(); E.position.y = -0.29; S.add(E); limb(0.27, 0.058, 0.048, skin, E);
+      const hand = sph(0.045, skin, 0, -0.3, 0.01, 0.85, 1.15, 0.8, E); return { S, E, hand }; };
+    W.clintArmL = arm(-1); W.clintArmR = arm(1);
+    // cigarette between the right hand's fingers: paper, filter, ember (brightens on a drag)
+    { const cig = W.clintCig = new THREE.Group(); cig.position.set(0, -0.33, 0.06); cig.rotation.x = Math.PI / 2; W.clintArmR.E.add(cig);
+      const paper = new THREE.Mesh(new THREE.CylinderGeometry(0.0075, 0.0075, 0.075, 6), C(0xf0ece2)); paper.position.y = 0.0; cig.add(paper);
+      const filt = new THREE.Mesh(new THREE.CylinderGeometry(0.0078, 0.0078, 0.024, 6), C(0xc8893c)); filt.position.y = -0.049; cig.add(filt);
+      const em = W.clintEmber = new THREE.Mesh(new THREE.SphereGeometry(0.0115, 8, 6), glowMat(0xff5a14)); em.position.y = 0.04; cig.add(em); }
+    // neck + bald head: ears, a heavy brow (scowling), nose
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.105, 0.1, 10), skin); neck.position.set(0, 1.59, 0.0); G.add(neck);
+    const H = W.clintHead = new THREE.Group(); H.position.set(0, 1.63, 0.01); G.add(H);
+    sph(0.118, skin, 0, 0.11, 0, 0.98, 1.08, 1.02, H); sph(0.112, C(0xd09a78), 0, 0.15, -0.005, 0.94, 0.92, 0.98, H); // crown catches the light
+    for (const sx of [-1, 1]) { sph(0.026, skin, sx * 0.115, 0.1, -0.005, 0.5, 1, 0.85, H); const b = B(-0.04, -0.008, -0.008, 0.04, 0.008, 0.008, brow, H); b.position.set(sx * 0.045, 0.14, 0.108); b.rotation.z = sx * 0.28; }
+    sph(0.02, skin, 0, 0.09, 0.118, 0.9, 1.1, 1, H); sph(0.068, skin, 0, 0.035, 0.035, 1.35, 0.65, 1.15, H); // nose, jowls
+    W.anchors.clintHead = new THREE.Vector3(); W.clintPick = new THREE.Mesh(new THREE.BoxGeometry(0.72, 1.8, 0.6), new THREE.MeshBasicMaterial({ visible: false })); W.clintPick.position.y = 0.9; G.add(W.clintPick);
+    W.clintCol = { x0: 0, x1: 0, z0: 0, z1: 0, y0: 0, y1: 1.8, disabled: true }; W.colliders.push(W.clintCol);
+    W.placeClint = (x, z, ry) => { G.position.set(x, 0, z); G.rotation.y = ry; G.updateMatrixWorld(true); W.clintHead.getWorldPosition(W.anchors.clintHead); W.anchors.clintHead.y += 0.08;
+      Object.assign(W.clintCol, { x0: x - 0.34, x1: x + 0.34, z0: z - 0.34, z1: z + 0.34 }); };
+    W.placeClint(1.2, 4.75, 1.0); }
 
   // =====================================================================
   // MAINTENANCE / ENGINEERING OFFICE  x[0,6] z[-5,0] (just inside the dock door)

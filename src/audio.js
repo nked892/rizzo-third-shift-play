@@ -124,7 +124,8 @@ export class Sound {
   // ---- Dee's recorded radio takes (src/dee-lines.js; original Piper TTS voice, radio-processed offline) ----
   // Preloaded after the Clock In click. Relative URLs, so it works from a subfolder (GitHub Pages). A missing take just falls back to radio().
   loadVoices(lines, base = 'audio/dee/') {
-    if (!this.ctx || this.voiceBufs) return; this.voiceBufs = {}; this.voiceFails = 0;
+    if (!this.ctx) return; this._vbases = this._vbases || {}; if (this._vbases[base]) return; this._vbases[base] = 1; // Dee + Clint share one take table (keyed by subtitle text)
+    this.voiceBufs = this.voiceBufs || {}; this.voiceFails = this.voiceFails || 0;
     for (const [text, [file]] of Object.entries(lines)) {
       fetch(base + file).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
         .then(ab => new Promise((res, rej) => this.ctx.decodeAudioData(ab, res, rej)))

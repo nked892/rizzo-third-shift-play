@@ -4,6 +4,7 @@ import { buildWorld } from './world.js';
 import { Sound } from './audio.js';
 import { Story } from './story.js';
 import { DEE_LINES } from './dee-lines.js';
+import { CLINT_LINES } from './clint-lines.js';
 
 const params = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
@@ -172,7 +173,7 @@ addEventListener('mousemove', e => { if (game.state !== 'play' || document.point
 canvas.addEventListener('click', () => { if (game.state === 'play' && document.pointerLockElement !== canvas) game.lockPointer(); });
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && game.state === 'play' && !params.has('nolock')) pause(true); });
 function pause(v) { if (v) { game.state = 'pause'; $('pause').classList.remove('hidden'); } else { $('pause').classList.add('hidden'); game.state = 'play'; game.lockPointer(); } }
-$('start').onclick = () => { sound.init(); sound.loadVoices(DEE_LINES); $('title').classList.add('hidden'); $('hud').classList.remove('hidden'); game.state = 'play'; game.lockPointer(); game.story.start(); };
+$('start').onclick = () => { sound.init(); sound.loadVoices(CLINT_LINES, 'audio/clint/'); sound.loadVoices(DEE_LINES); $('title').classList.add('hidden'); $('hud').classList.remove('hidden'); game.state = 'play'; game.lockPointer(); game.story.start(); };
 $('resume').onclick = () => pause(false);
 $('restart').onclick = $('restart2').onclick = () => { $('pause').classList.add('hidden'); $('dead').classList.add('hidden'); game.story.restart(); game.state = 'play'; game.lockPointer(); };
 $('retry').onclick = () => { $('dead').classList.add('hidden'); game.story.retry(); game.state = 'play'; game.lockPointer(); };
