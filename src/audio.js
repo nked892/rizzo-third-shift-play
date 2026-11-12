@@ -132,10 +132,11 @@ export class Sound {
     }
   }
   // play a take; returns its length in seconds, or 0 if it isn't loaded (caller falls back to the squelch)
-  voice(text) {
+  // opts.pos: in-person (front desk) takes come from her, positionally, instead of straight out of the radio
+  voice(text, opts = {}) {
     const b = this.ctx && this.voiceBufs && this.voiceBufs[text]; if (!b) return 0;
-    this.stopVoice(); const s = this.ctx.createBufferSource(); s.buffer = b; const g = this.ctx.createGain(); g.gain.value = 1.0;
-    s.connect(g); g.connect(this.master); s.start(); this._vsrc = s; s.onended = () => { if (this._vsrc === s) this._vsrc = null; }; return b.duration;
+    this.stopVoice(); const s = this.ctx.createBufferSource(); s.buffer = b; const g = this.ctx.createGain(); g.gain.value = opts.pos ? 1.25 : 1.0;
+    s.connect(g); g.connect(opts.pos ? this.panner(opts.pos, 1.8, 0.9) : this.master); s.start(); this._vsrc = s; s.onended = () => { if (this._vsrc === s) this._vsrc = null; }; return b.duration;
   }
   stopVoice() { const s = this._vsrc; this._vsrc = null; if (s) try { s.stop(); } catch (e) {} }
   // ---- Christmas-shift additions (all original synthesis) ----
@@ -204,6 +205,15 @@ export class Sound {
     this.burst({ f: 130, q: 0.7, peak: 1.2, a: 0.001, hold: 0.06, rel: 0.55, dest: p, buf: this.brown }); this.burst({ f: 1900, q: 2.5, peak: 0.45, a: 0.001, hold: 0.01, rel: 0.12, dest: p });
     this.tone({ f: 70, f2: 32, peak: 0.35, hold: 0.05, rel: 0.5, dest: p }); setTimeout(() => this.ctx && this.burst({ f: 2600, q: 6, peak: 0.15, rel: 0.08, dest: p }), 120); }
   hiss(dur = 1.8, pos) { const C = this.ctx; const n = this.noiseSrc(); const hp = C.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 3500; const g = C.createGain(); n.connect(hp); hp.connect(g); g.connect(pos ? this.panner(pos, 1, 1.5) : this.master); this.env(g, 0.15, 0.12, dur - 0.4, 0.25); n.start(); n.stop(this.t + dur + 0.1); }
+  // ---- 6:51 AM ending ----
+  // your own pulse in your ears; rate (beats/s) driven by how close it is
+  heartbeat(vol = 0.1) { const L = { on: true, rate: 1.1, vol };
+    const beat = () => { if (!L.on) return; const t = this.t; this.tone({ f: 62, f2: 40, peak: L.vol, a: 0.004, hold: 0.03, rel: 0.16, t0: t }); this.tone({ f: 55, f2: 36, peak: L.vol * 0.7, a: 0.004, hold: 0.02, rel: 0.2, t0: t + 0.22 });
+      L.timer = setTimeout(beat, 1000 / Math.max(0.6, L.rate)); };
+    beat(); L.stop = () => { L.on = false; clearTimeout(L.timer); }; return L; }
+  // a box truck backing up to the dock: day shift
+  backup(pos, n = 5) { const p = this.panner(pos, 6, 0.5); for (let i = 0; i < n; i++) this.tone({ f: 1040, type: 'square', peak: 0.035, a: 0.01, hold: 0.42, rel: 0.03, dest: p, t0: this.t + i * 1.0 }); }
+  jingle() { for (let i = 0; i < 7; i++) this.tone({ f: 2600 + Math.random() * 2200, peak: 0.05, hold: 0, rel: 0.12, t0: this.t + i * 0.035 + Math.random() * 0.02 }); }
   warmAir(pos, vol = 0.06) { // PTAC blower
     const C = this.ctx, p = this.panner(pos, 1.2, 1.6); const g = C.createGain(); g.gain.value = 0; g.connect(p);
     const n = this.noiseSrc(this.brown); const lp = C.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; n.connect(lp); lp.connect(g); n.start();

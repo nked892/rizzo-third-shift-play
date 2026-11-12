@@ -143,7 +143,7 @@ export function buildWorld(scene, T) {
     W.doors.push(D);
     W.interact.push({ mesh: panel, door: D, range: 2.2,
       prompt: () => D.broken ? null : (D.locked && !(D.key && W.has && W.has(D.key))) ? (D.lockedMsg || 'Locked') : (D.open ? 'Close' : 'Open'),
-      use: () => { if (D.broken) return; if (D.locked && !(D.key && W.has && W.has(D.key))) { W.sound && W.sound.locked(new THREE.Vector3(x, 1, z)); W.toast && W.toast(D.lockedMsg || 'Locked.'); return; } if (D.locked) { D.locked = false; W.toast && W.toast('Unlocked with ' + D.key + '.'); } D.setOpen(!D.open); } });
+      use: () => { if (D.broken) return; if (D.locked && !(D.key && W.has && W.has(D.key))) { W.sound && W.sound.locked(new THREE.Vector3(x, 1, z)); W.toast && W.toast(D.lockedMsg || 'Locked.'); D.onLocked && D.onLocked(D); return; } if (D.locked) { D.locked = false; W.toast && W.toast('Unlocked with ' + D.key + '.'); } D.setOpen(!D.open); } });
     const proxy = deco(col.x0, y + 0.1, col.z0, col.x1, y + hgt - 0.1, col.z1, new THREE.MeshBasicMaterial({ visible: false }));
     W.interact.push({ mesh: proxy, door: D, range: 1.9, enabled: () => D.open && !D.broken, prompt: () => 'Close', use: () => D.setOpen(false) });
     return D;
@@ -313,11 +313,11 @@ export function buildWorld(scene, T) {
   // =====================================================================
   // McLEAN HALL guest corridor x[-6,34] z[-33,-30]
   // =====================================================================
-  room({ x0: -6, z0: -33, x1: 34, z1: -30, h: 2.8, floor: M.carpetHall, ceil: M.white, wall: M.cream, wains: M.wains, crown: true, open: { s: [[8.6, 9.8, 2.2], [14.5, 17.5, 2.4]], e: [[-32.1, -30.9, 2.3]], n: [[23.52, 24.48, 2.2]] }, surface: 'carpet' });
+  room({ x0: -6, z0: -33, x1: 34, z1: -30, h: 2.8, floor: M.carpetHall, ceil: M.white, wall: M.cream, wains: M.wains, crown: true, open: { s: [[0.3, 2.7, 2.4], [8.6, 9.8, 2.2], [14.5, 17.5, 2.4]], e: [[-32.1, -30.9, 2.3]], n: [[23.52, 24.48, 2.2]] }, surface: 'carpet' });
   W.doors.terraceDoor = door(33.95, -31.5, 'z', 1.2, { swing: -1, mat: M.glass, name: 'terraceMcLean', breakable: true });
   for (const x of [-3, 1, 5, 12, 20, 28, 31.5]) fakeDoor(x, -32.9, 'n', 100 + Math.round((x + 6) / 4) * 2 + 1);
-  for (const x of [-3, 1, 5, 12, 21, 25, 29]) fakeDoor(x, -30.1, 's', 100 + Math.round((x + 6) / 4) * 2);
-  for (const x of [-1, 8, 18, 26]) { const v = light(x + 1, 2.0, -31.5, 0xffc98a, 2.2, { dist: 8, group: 'mclean' }); sconce(x, 1.9, -32.9, 'n', v); sconce(x + 2, 1.9, -30.1, 's', v); }
+  for (const x of [12, 21, 25, 29]) fakeDoor(x, -30.1, 's', 100 + Math.round((x + 6) / 4) * 2); // west end of the south wall opens into the lobby (below)
+  for (const x of [-1, 8, 18, 26]) { const v = light(x + 1, 2.0, -31.5, 0xffc98a, 2.2, { dist: 8, group: 'mclean' }); sconce(x, 1.9, -32.9, 'n', v); sconce(x === -1 ? -1 : x + 2, 1.9, -30.1, 's', v); }
   picture(3, 1.6, -32.9, 'n', 0.8, 0.6, 30); picture(23, 1.6, -30.1, 's', 0.8, 0.6, 190); picture(16, 1.6, -32.9, 'n', 1.0, 0.7, 100);
   label(-5.85, 2.35, -31.5, 0.5, 0.18, ['EXIT'], { w: 128, h: 48, size: 34, bg: '#300', fg: '#ff3b2b', bold: true, glow: 1.5 }, Math.PI / 2);
   windowOn(-5.88, 1.5, -31.5, 'w', 1.0, 1.5, M.navy);
@@ -604,12 +604,137 @@ export function buildWorld(scene, T) {
     solidDeco(26.0, y, -37.9, 26.5, y + 0.76, -36.5, M.mahogany); chair(25.5, -37.2, -Math.PI / 2, M.beige); rug(22.6, -38.0, 25.6, -35.8, 0.002); }
   W.anchors.r117 = new THREE.Vector3(24, 0, -35.5);
 
+  // =====================================================================
+  // McLEAN LOBBY + FRONT DESK x[-6,7.5] z[-30,-21] (6:51 AM ending). Opens north into the west end of McLean hall through a pair of
+  // fire doors on magnetic hold-opens (they let go when the power drops). Night-audit station, radio/key return tray, Dee at the desk.
+  // =====================================================================
+  W.groups.lobby = [];
+  room({ x0: -6, z0: -30, x1: 7.5, z1: -21, h: 3.4, floor: M.hardwood, ceil: M.trim, wall: M.cream, wains: M.wains, crown: true, casing: M.trim, skip: ['n'], surface: 'wood' });
+  box(-6, 2.8, -30.1, 7.5, 3.4, -29.9, M.cream); // header over the hall wall (lobby ceiling is higher than the hall's)
+  label(1.5, 2.65, -30.12, 1.3, 0.2, ['FRONT DESK · LOBBY'], { w: 384, h: 56, size: 30, bg: '#1c2a4a', fg: '#e8e0c8' }, Math.PI);
+  label(1.5, 2.62, -29.88, 1.5, 0.2, ['McLEAN HALL · GUEST ROOMS'], { w: 384, h: 56, size: 28, bg: '#1c2a4a', fg: '#e8e0c8' }, 0);
+  { // fire-door pair on mag holders, held open flat against the lobby side of the wall
+    const mk = (cx, right) => { const D = door(cx, -30.0, 'x', 1.2, { swing: right ? 1 : -1, mat: M.mahogany, window: true, name: right ? 'lobbyR' : 'lobbyL' });
+      if (right) { for (const c of D.pivot.children) c.position.x = -c.position.x; D.pivot.position.x += 1.2; }
+      D.holdOpen = () => { D.broken = false; D.locked = false; D.setOpen(true, false); D.target = D.swing * (Math.PI - 0.14); D.angle = D.target; D.pivot.rotation.y = D.angle; }; D.setOpen(false, false); D.locked = true; D.lockedMsg = 'Lobby. Dee keeps these shut overnight for the audit. Radio her if you need the desk.'; return D; };
+    W.doors.lobbyL = mk(0.9, false); W.doors.lobbyR = mk(2.1, true);
+    for (const x of [0.12, 2.88]) deco(x - 0.06, 1.85, -29.9, x + 0.06, 1.97, -29.84, M.darkSteel); // the mag holders
+  }
+  // lights
+  const vL1 = light(-3.2, 2.9, -26.2, 0xffd8a0, 2.6, { dist: 10, group: 'lobby' }), vL2 = light(4.8, 2.9, -27.2, 0xffd8a0, 2.4, { dist: 10, group: 'lobby' });
+  chandelier(-3.2, 3.0, -26.2, vL1); chandelier(4.8, 3.0, -27.2, vL2);
+  const vDesk = light(1.5, 2.4, -24.2, 0xffcf96, 2.0, { dist: 7, group: 'lobby' }); lantern(0.3, 2.45, -24.0, vDesk, 0.9); lantern(2.7, 2.45, -24.0, vDesk, 0.9);
+  // ---- the front desk: mahogany front with a stone transaction ledge, work surface behind, side returns ----
+  { const stone = L(T.concrete, 1, 0xd9d1c2);
+    solidDeco(-1.2, 0, -24.6, 4.2, 1.05, -24.3, M.mahogany, { occ: true }); deco(-1.25, 1.05, -24.7, 4.25, 1.1, -24.22, stone);
+    for (let i = 0; i < 5; i++) deco(-1.0 + i * 1.08, 0.12, -24.62, -0.2 + i * 1.08, 0.92, -24.6, L(T.mahogany, 0.8, 0x5a3022)); // raised panels
+    solidDeco(-1.2, 0, -24.3, 4.2, 0.74, -23.6, M.mahogany); deco(-1.2, 0.74, -24.3, 4.2, 0.78, -23.55, stone);
+    solidDeco(-1.2, 0, -24.3, -0.9, 1.05, -21.1, M.mahogany); solidDeco(3.9, 0, -24.3, 4.2, 1.05, -21.1, M.mahogany);
+    deco(-1.22, 1.05, -24.3, -0.88, 1.1, -21.1, stone); deco(3.88, 1.05, -24.3, 4.22, 1.1, -21.1, stone);
+    // garland along the front with a few red berries, and a small wreath on the panel
+    deco(-1.2, 0.96, -24.68, 4.2, 1.03, -24.62, new THREE.MeshLambertMaterial({ color: 0x1f3d22 }));
+    for (let x = -1.0; x < 4.1; x += 0.42) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.022, 5, 4), M.red); b.position.set(x, 0.99, -24.69); scene.add(b); }
+    wreath(1.5, 0.55, -24.64, Math.PI, 0.55);
+    // night-audit station: monitor (turned toward her chair), keyboard, printer, the audit packet, desk phone, a small lamp
+    const mon = new THREE.Group(); mon.position.set(2.85, 0.78, -23.85); mon.rotation.y = -0.85; scene.add(mon);
+    box(-0.28, 0.12, -0.03, 0.28, 0.46, 0.03, M.black, { parent: mon, solid: false, occ: false }); box(-0.03, 0, -0.03, 0.03, 0.12, 0.03, M.black, { parent: mon, solid: false, occ: false });
+    const scr = label(0, 0, 0, 0.52, 0.3, ['NIGHT AUDIT · 12/25/26', 'DAY END ........ DONE', 'ROOMS 41 · OCC 22', 'ENG: WO-4471..4474 ✓'], { w: 256, h: 150, size: 17, bg: '#0c1824', fg: '#9fd8b0', glow: 0.9 }, 0);
+    scene.remove(scr); scr.position.set(0, 0.29, 0.032); mon.add(scr);
+    deco(2.0, 0.78, -23.95, 2.55, 0.8, -23.78, M.black); // keyboard
+    solidDeco(-0.8, 0.78, -24.15, -0.3, 0.98, -23.7, L(T.concrete, 1, 0x3a3c3e)); deco(-0.75, 0.98, -24.1, -0.35, 1.0, -23.8, M.cloth); // printer + paper
+    for (let i = 0; i < 4; i++) { const p = deco(0.05, 0.78 + i * 0.012, -24.15, 0.33, 0.79 + i * 0.012, -23.75, M.cloth); p.rotation.y = (i - 1.5) * 0.06; } // audit packet
+    deco(3.5, 0.78, -24.1, 3.75, 0.84, -23.9, M.black); deco(3.52, 0.84, -24.1, 3.73, 0.88, -24.04, M.black); // phone
+    const vMon = light(2.4, 1.2, -23.3, 0x9fc0ff, 0.7, { dist: 3, group: 'lobby' });
+    // RADIO RETURN tray + ENG key drop on the transaction ledge (the two hand-ins)
+    deco(0.62, 1.1, -24.62, 1.02, 1.13, -24.32, M.black); deco(0.62, 1.13, -24.62, 0.65, 1.17, -24.32, M.black); deco(0.99, 1.13, -24.62, 1.02, 1.17, -24.32, M.black);
+    label(0.825, 1.08, -24.705, 0.5, 0.05, ['RADIO RETURN'], { w: 256, h: 28, size: 20, bg: '#111', fg: '#e8e4d8', bold: true }, Math.PI);
+    W.deskRadio = new THREE.Group(); scene.add(W.deskRadio); { const r = deco(0.74, 1.13, -24.52, 0.84, 1.33, -24.44, M.black, { parent: W.deskRadio }); deco(0.79, 1.33, -24.49, 0.81, 1.5, -24.47, M.black, { parent: W.deskRadio }); const led = deco(0.765, 1.3, -24.53, 0.775, 1.31, -24.525, glowMat(0x22ff44), { parent: W.deskRadio }); }
+    W.deskRadio.visible = false;
+    deco(2.05, 1.1, -24.6, 2.35, 1.24, -24.42, M.brass); deco(2.09, 1.19, -24.61, 2.31, 1.205, -24.6, M.black);
+    label(2.2, 1.14, -24.605, 0.26, 0.04, ['ENG KEYS'], { w: 192, h: 28, size: 20, bg: '#b08d3c', fg: '#1a1208', bold: true }, Math.PI);
+    W.deskKeys = new THREE.Group(); scene.add(W.deskKeys);
+    { const ring = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.006, 5, 14), M.steel); ring.rotation.x = Math.PI / 2; ring.position.set(2.75, 1.112, -24.45); W.deskKeys.add(ring);
+      for (let i = 0; i < 6; i++) { const k = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.004, 0.018), i === 0 ? M.brass : M.steel); const a = -0.4 + i * 0.45; k.position.set(2.75 + Math.cos(a) * 0.08, 1.111, -24.45 + Math.sin(a) * 0.08); k.rotation.y = -a; W.deskKeys.add(k); }
+      const tag = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.004, 0.035), M.red); tag.position.set(2.62, 1.111, -24.5); W.deskKeys.add(tag); }
+    W.deskKeys.visible = false;
+    W.radioTrayMesh = deco(0.45, 1.05, -24.75, 1.2, 1.45, -24.2, new THREE.MeshBasicMaterial({ visible: false }));
+    W.keyDropMesh = deco(1.85, 1.05, -24.75, 2.95, 1.4, -24.2, new THREE.MeshBasicMaterial({ visible: false }));
+    W.anchors.deskTray = new THREE.Vector3(0.82, 1.15, -24.47); W.anchors.keyDrop = new THREE.Vector3(2.2, 1.15, -24.47);
+    // behind the desk: key cubbies, the house sign, a staff door
+    deco(-0.6, 1.2, -21.12, 1.0, 2.0, -21.05, M.mahogany); for (let r = 0; r < 4; r++) for (let c = 0; c < 6; c++) deco(-0.55 + c * 0.26, 1.25 + r * 0.19, -21.13, -0.33 + c * 0.26, 1.41 + r * 0.19, -21.12, M.black);
+    label(1.2, 2.62, -21.11, 2.4, 0.42, ['THE RIZZO CENTER'], { w: 512, h: 90, size: 54, bg: '#1c2a4a', fg: '#c9a74e', font: 'Georgia, serif' }, Math.PI);
+    label(1.2, 2.3, -21.11, 2.4, 0.14, ['PAUL J. RIZZO CONFERENCE CENTER · CHAPEL HILL'], { w: 512, h: 30, size: 18, bg: '#1c2a4a', fg: '#e8e0c8' }, Math.PI);
+    fakeDoor(3.2, -21.1, 's', null, { mat: M.mahogany, msg: 'Front office. Dee\'s side of the desk.' });
+    rug(-0.4, -27.6, 3.4, -25.0, 0);
+  }
+  // ---- Dee: night auditor, seated at the desk. Stylized and simple (no likeness): navy blazer, red top, reading glasses, hair up. ----
+  { const G = W.dee = new THREE.Group(); G.position.set(1.5, 0, -23.05); scene.add(G);
+    const skin = C(0x8a5a3e), hair = C(0x24160f), blazer = C(0x1e2a44), slacks = C(0x2a2a30), top = C(0x8a1c1e), chairM = C(0x18181a);
+    const B = (x0, y0, z0, x1, y1, z1, m, p = G) => box(x0, y0, z0, x1, y1, z1, m, { parent: p, solid: false, occ: false });
+    const limb = (a, b, r, m, p = G) => { const d = new THREE.Vector3().subVectors(b, a); const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 0.9, d.length(), 8), m); c.position.copy(a).addScaledVector(d, 0.5); c.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); p.add(c); return c; };
+    // chair
+    B(-0.26, 0.42, -0.24, 0.26, 0.5, 0.26, chairM); B(-0.24, 0.55, 0.22, 0.24, 1.12, 0.3, chairM); limb(new THREE.Vector3(0, 0.05, 0), new THREE.Vector3(0, 0.42, 0), 0.03, chairM);
+    for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; limb(new THREE.Vector3(0, 0.05, 0), new THREE.Vector3(Math.cos(a) * 0.28, 0.03, Math.sin(a) * 0.28), 0.018, chairM); }
+    // seated body
+    B(-0.18, 0.5, -0.36, 0.18, 0.64, 0.12, slacks); // lap
+    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.155, 0.185, 0.56, 12), blazer); torso.scale.z = 0.72; torso.position.set(0, 0.9, 0.04); torso.rotation.x = -0.08; G.add(torso);
+    B(-0.06, 1.08, -0.1, 0.06, 1.17, -0.07, top); // red top at the collar
+    for (const sx of [-1, 1]) { const sh = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), blazer); sh.position.set(sx * 0.165, 1.13, 0.03); G.add(sh);
+      const el = new THREE.Vector3(sx * 0.215, 0.9, -0.16), hd = new THREE.Vector3(sx * 0.13, 0.8, -0.5);
+      limb(new THREE.Vector3(sx * 0.175, 1.12, 0.02), el, 0.048, blazer); limb(el, hd, 0.04, blazer); const hn = new THREE.Mesh(new THREE.SphereGeometry(0.038, 8, 6), skin); hn.scale.set(1, 0.6, 1.3); hn.position.copy(hd).add(new THREE.Vector3(0, 0, -0.04)); G.add(hn); }
+    label(1.5 + 0.09, 1.02, -23.15, 0.07, 0.03, ['DEE'], { w: 64, h: 28, size: 20, bg: '#f2efe6', fg: '#1c2a4a', bold: true }, Math.PI);
+    limb(new THREE.Vector3(0, 1.16, 0.01), new THREE.Vector3(0, 1.25, 0.0), 0.045, skin);
+    const H = W.deeHead = new THREE.Group(); H.position.set(0, 1.25, -0.005); G.add(H);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.1, 14, 10), skin); head.scale.set(0.9, 1.12, 0.98); head.position.y = 0.1; H.add(head);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.108, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.56), hair); cap.scale.set(0.95, 1.1, 1.02); cap.position.set(0, 0.11, 0.012); cap.rotation.x = 0.55; H.add(cap);
+    const bun = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), hair); bun.position.set(0, 0.17, 0.085); H.add(bun);
+    W.anchors.deeHead = new THREE.Vector3(1.5, 1.38, -23.1); W.deePick = deco(1.12, 0.9, -23.45, 1.88, 1.58, -22.8, new THREE.MeshBasicMaterial({ visible: false }));
+    W.colliders.push({ x0: 1.1, x1: 1.9, z0: -23.5, z1: -22.7, y0: 0, y1: 1.5 });
+  }
+  // ---- the guest side: front doors (west), sitting area, a tree, the bell cart ----
+  { const dawn = new THREE.MeshLambertMaterial({ color: 0x1a2436, emissive: 0x0e1726 }); dawn.userData.s = 1;
+    for (const z of [-26.15, -24.95]) { plane(-5.885, 1.15, z, 1.1, 2.2, dawn, Math.PI / 2); deco(-5.9, 0, z - 0.6, -5.84, 2.3, z - 0.55, M.darkSteel); deco(-5.9, 0, z + 0.55, -5.84, 2.3, z + 0.6, M.darkSteel); deco(-5.89, 0.95, z - 0.45, -5.8, 1.0, z + 0.45, M.brass); }
+    deco(-5.9, 2.3, -26.8, -5.84, 2.38, -24.3, M.darkSteel); plane(-5.885, 2.75, -25.55, 2.4, 0.7, dawn, Math.PI / 2);
+    const fd = deco(-5.95, 0, -26.8, -5.8, 2.3, -24.3, new THREE.MeshBasicMaterial({ visible: false }));
+    W.interact.push({ mesh: fd, range: 2.4, prompt: () => 'Front doors', use: () => { W.sound && W.sound.locked(new THREE.Vector3(-5.9, 1, -25.5)); W.toast && W.toast('Front doors. Locked until seven; day shift has the key. It\'s just starting to go gray out there.'); } });
+    wreath(-5.8, 2.75, -25.55, Math.PI / 2, 0.8); rug(-5.6, -26.9, -4.3, -24.2, 0);
+    windowOn(-5.88, 1.6, -28.6, 'w', 0.9, 1.6, M.navy); windowOn(-5.88, 1.6, -22.5, 'w', 0.9, 1.6, M.navy);
+    armchair(-3.4, -28.6, Math.PI - 0.4, M.navy); armchair(-1.8, -28.4, Math.PI + 0.5, M.navy); cyl(-2.6, 0, -27.5, 0.42, 0.45, M.mahogany, { solid: true, seg: 16 }); rug(-4.4, -29.5, -0.9, -26.4, 0);
+    picture(-3.3, 1.8, -21.1, 's', 1.0, 0.7, 210); picture(6.0, 1.8, -21.1, 's', 0.9, 0.65, 35);
+    // the tree (same modest style as the one in the DuBose stair hall)
+    const x = -4.7, z = -22.4, y = 0; const tm = new THREE.MeshLambertMaterial({ color: 0x1b3620 }); const cones = [[0.8, 0.28], [0.6, 0.8], [0.42, 1.32]];
+    for (const [r, b] of cones) { const c = new THREE.Mesh(new THREE.ConeGeometry(r, 1.0, 9), tm); c.position.set(x, y + b + 0.5, z); scene.add(c); }
+    deco(x - 0.22, y, z - 0.22, x + 0.22, y + 0.32, z + 0.22, M.red); W.colliders.push({ x0: x - 0.65, x1: x + 0.65, z0: z - 0.65, z1: z + 0.65, y0: y, y1: y + 2.3 });
+    const rAt = h => { let r = 0.05; for (const [cr, b] of cones) if (h >= b && h <= b + 1.0) r = Math.max(r, cr * (1 - (h - b) / 1.0)); return r; };
+    const tl = light(x + 0.4, y + 1.2, z - 0.4, 0xffc070, 0.6, { dist: 3.5, group: 'lobby' }); const cols = [0xffc870, 0xff5a40, 0x6aa0ff, 0x7aff90];
+    for (let i = 0; i < 28; i++) { const h = 0.4 + (i / 28) * 1.8, a = i * 2.39; const r = rAt(h) + 0.02; const gm = glowMat(cols[i % 4]); const b = new THREE.Mesh(new THREE.SphereGeometry(0.026, 5, 4), gm); b.position.set(x + Math.cos(a) * r, y + h, z + Math.sin(a) * r); scene.add(b); tl.fixtures.push(gm); }
+    const star = glowMat(0xffe0a0); const st = new THREE.Mesh(new THREE.OctahedronGeometry(0.07), star); st.position.set(x, y + 2.38, z); scene.add(st); tl.fixtures.push(star);
+    // bell cart parked by the east wall
+    { const bx = 6.4, bz = -27.4; solidDeco(bx - 0.4, 0.12, bz - 0.7, bx + 0.4, 0.18, bz + 0.7, L(T.carpetRoom, 1, 0x7a2020)); for (const sz of [-0.62, 0.62]) { cyl(bx, 0.18, bz + sz, 0.02, 1.7, M.brass); } deco(bx - 0.02, 1.86, bz - 0.64, bx + 0.02, 1.9, bz + 0.64, M.brass);
+      for (const [a, b] of [[-0.35, -0.6], [0.35, -0.6], [-0.35, 0.6], [0.35, 0.6]]) cyl(bx + a, 0, bz + b, 0.05, 0.12, M.black); }
+    solidDeco(7.0, 0, -25.2, 7.4, 0.85, -23.4, M.mahogany); deco(7.05, 0.85, -25.1, 7.3, 1.2, -23.5, L(T.books, 0.5)); // brochure console
+    fakeDoor(7.4, -22.4, 'e', null, { mat: M.mahogany, msg: 'Sales offices. Locked.' });
+  }
+  W.anchors.lobby = new THREE.Vector3(1.5, 0, -27); W.anchors.lobbyDoors = new THREE.Vector3(1.5, 1.2, -30);
+
+  // ---- MDP-1, the McLean main, in the maintenance shop (east wall, beside the key cabinet). Separate from DuBose's DH-1. ----
+  { const x = 5.9; solidDeco(x - 0.45, 0, -4.2, x, 2.1, -3.1, L(T.plate, 0.3, 0x6d7377));
+    deco(x - 0.47, 0.9, -3.95, x - 0.45, 1.65, -3.35, M.darkSteel); deco(x - 0.48, 1.42, -3.9, x - 0.47, 1.6, -3.4, M.black);
+    label(x - 0.471, 1.9, -3.65, 0.9, 0.22, ['MDP-1 · McLEAN MAIN', '480Y/277V · 3Ø 4W · 1200A'], { w: 320, h: 80, size: 19, bg: '#e8e8e0', fg: '#111', bold: true }, -Math.PI / 2);
+    label(x - 0.471, 0.55, -3.65, 0.7, 0.3, ['⚠ DANGER', 'ARC FLASH HAZARD', 'PPE REQUIRED'], { w: 256, h: 110, size: 22, bg: '#e8742a', fg: '#111', bold: true }, -Math.PI / 2);
+    W.mdpTripped = label(x - 0.482, 1.51, -3.65, 0.32, 0.12, ['TRIPPED'], { w: 128, h: 48, size: 30, bg: '#300', fg: '#ff4a3a', bold: true, glow: 1.4 }, -Math.PI / 2);
+    W.mdpClosed = label(x - 0.482, 1.51, -3.65, 0.32, 0.12, ['CLOSED'], { w: 128, h: 48, size: 30, bg: '#032', fg: '#5aff8a', bold: true, glow: 1.4 }, -Math.PI / 2);
+    W.mdpTripped.visible = false;
+    const hp = W.mdpHandle = new THREE.Group(); hp.position.set(x - 0.5, 1.05, -3.75); scene.add(hp); box(-0.03, -0.02, -0.02, 0.0, 0.25, 0.02, M.black, { parent: hp, solid: false, occ: false }); box(-0.05, 0.22, -0.04, 0.0, 0.28, 0.04, M.red, { parent: hp, solid: false, occ: false });
+    const pb = deco(x - 0.5, 1.08, -3.5, x - 0.47, 1.16, -3.42, C(0x2a8a3a)); label(x - 0.472, 1.2, -3.46, 0.12, 0.04, ['CLOSE'], { w: 96, h: 32, size: 22, bg: '#ddd', fg: '#111', bold: true }, -Math.PI / 2);
+    W.mdpMesh = deco(x - 0.95, 0.6, -4.25, x, 2.05, -3.05, new THREE.MeshBasicMaterial({ visible: false })); W.anchors.mdp = new THREE.Vector3(x - 0.5, 1.3, -3.65); }
+
   // ---------- region tags for gameplay ----------
   W.regions = [
     { name: 'closet', x0: 58, x1: 60, z0: -46, z1: -43 }, { name: 'sewing', x0: 58, x1: 66, z0: -50, z1: -43 }, { name: 'bar', x0: 50, x1: 58, z0: -50, z1: -43 },
     { name: 'backhall', x0: 54, x1: 65.95, z0: -43, z1: -40 }, { name: 'bath117', x0: 24.95, x1: 26.6, z0: -35.6, z1: -33 }, { name: 'room117', x0: 21.8, x1: 26.6, z0: -38.4, z1: -33.02 },
     { name: 'dock', x0: 0, x1: 16, z0: 0, z1: 12 }, { name: 'office', x0: 0, x1: 6, z0: -5, z1: 0 }, { name: 'corridor', x0: 8, x1: 10.4, z0: -30, z1: 0 },
-    { name: 'stairB', x0: 10.4, x1: 14, z0: -20, z1: -10 }, { name: 'mclean', x0: -6, x1: 34, z0: -33, z1: -30 }, { name: 'pantry', x0: 14, x1: 18, z0: -30, z1: -25 },
+    { name: 'stairB', x0: 10.4, x1: 14, z0: -20, z1: -10 }, { name: 'lobby', x0: -6, x1: 7.5, z0: -29.98, z1: -21 }, { name: 'mclean', x0: -6, x1: 34, z0: -33, z1: -30 }, { name: 'pantry', x0: 14, x1: 18, z0: -30, z1: -25 },
     { name: 'terrace', x0: 34, x1: 48, z0: -38, z1: -25 }, { name: 'duboseHall', x0: 48, x1: 66, z0: -33, z1: -30 }, { name: 'library', x0: 50, x1: 62, z0: -40, z1: -33 },
     { name: 'dining', x0: 50, x1: 62, z0: -30, z1: -22 }, { name: 'butler', x0: 62, x1: 66, z0: -30, z1: -22 }, { name: 'foyer', x0: 66, x1: 78, z0: -42, z1: -22 }, { name: 'suite', x0: 66, x1: 78, z0: -50, z1: -42 },
   ];

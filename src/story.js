@@ -1,10 +1,17 @@
 // Third Shift — Christmas Eve shift: clock in, two work orders in McLean, then DuBose and the statue;
-// back to McLean, then the DuBose sewing room (Lady DuBose's haunt), one more McLean ticket while 173 hunts, and clock out at the dock.
+// back to McLean, then the DuBose sewing room (Lady DuBose's haunt), one more McLean ticket while 173 hunts.
+// 6:51 AM: hand the radio and keys over to Dee at the front desk; the second you leave the lobby the building goes dark, and you
+// run for the shop and the McLean main (MDP-1) with no radio and nobody to call.
 import * as THREE from 'three';
 import { makeStatue } from './statue.js';
 
 const DEE = 'DEE (NIGHT AUDIT)';
 const ME = 'YOU';
+const DEE_LIVE = 'DEE'; // in person at the front desk (not radio-processed, positional from her chair)
+const DESK_SPAWN = { x: 1.5, z: -25.6, yaw: Math.PI, pitch: -0.1 }; // guest side of the front desk, facing Dee
+const CHASE_START = { x: 1.5, z: -30.85, yaw: -Math.PI / 2 }; // checkpoint G: McLean hall just outside the lobby doors, facing east
+const CHASE_GROUPS = ['lobby', 'mclean', 'pantry', 'corr', 'stairB', 'dock', 'office', 'r117'];
+const LURKS_G = [[-4.5, -31.5], [5.5, -31.5], [16, -27.2], [20, -31.5], [9.2, -24], [9.2, -16], [12.6, -12], [14, 8.5], [5.5, 9.5], [12.5, 3]];
 const SHOP_WAKE = { x: 2.55, z: -2.85, yaw: 0.615, pitch: -0.2 }; // maintenance office, beside the desk chair, facing the desk
 const CELL = 0.25;
 const DY_BAR = 0.34; // DuBose floor height (matches world.js DY)
@@ -15,8 +22,9 @@ const LURKS = [[52.6, -48.6], [63.5, -31.5], [56, -37], [55, -27.5], [71, -27], 
 export class Story {
   constructor(g) {
     this.g = g; const W = this.W = g.W;
-    this.f = { clocked: false, radio: false, wo1: 0, wo2: 0, ballast: false, key: false, phase: 'clockin', teased: false, suiteT: 0, power: true, breaker: false, ended: false, thermo: false, rad: false, cried: false, ptac: 0 };
-    this.tickets = []; this.queue = []; this.subT = 0; this.cp = null; this.timers = []; this.cold = 0; this.puffs = []; this.puffT = 0; this.rock = { amp: 0, t: 0 }; this.peekDoor = null; this.voiceStats = { voiced: 0, fallback: 0 };
+    this.f = { clocked: false, radio: false, wo1: 0, wo2: 0, ballast: false, key: false, phase: 'clockin', teased: false, suiteT: 0, power: true, breaker: false, ended: false, thermo: false, rad: false, cried: false, ptac: 0,
+      radioIn: false, keysIn: false, mainPower: true, mdp: 0 };
+    this.tickets = []; this.queue = []; this.subT = 0; this.cp = null; this.timers = []; this.cold = 0; this.puffs = []; this.puffT = 0; this.rock = { amp: 0, t: 0 }; this.peekDoor = null; this.voiceStats = { voiced: 0, fallback: 0, liveVoiced: 0, liveFallback: 0, radioAfterTurnIn: 0 }; this.ch = null;
     // statue
     this.statue = makeStatue(g.T); this.statue.visible = false; this.statue.position.set(0, -50, 0); g.scene.add(this.statue);
     this.S = { active: false, hunting: false, seen: false, moved: false, bashT: 0, bashTick: 0, seenEver: false };
@@ -33,7 +41,7 @@ export class Story {
     add({ mesh: W.timeclockMesh, range: 2.2, hold: 0.7, enabled: () => !f.clocked, prompt: () => 'Clock in — swipe badge',
       use: () => { f.clocked = true; g.sound.punch(); g.hud.toast('IN  ' + this.clockStr() + '   ·   ENGINEERING / 3RD SHIFT', 3.5);
         this.say([[ME, 'Clocked in. Radio\'s on the charger in the shop.', 2.6]]); f.phase = 'radio'; this.obj('Grab your radio — maintenance office, just inside the dock'); } });
-    add({ mesh: W.radioPick, range: 2.2, enabled: () => !f.radio, prompt: () => f.clocked ? 'Take radio + flashlight' : 'Radio (clock in first)',
+    add({ mesh: W.radioPick, range: 2.2, enabled: () => !f.radio && !f.radioIn, prompt: () => f.clocked ? 'Take radio + flashlight' : 'Radio (clock in first)',
       use: () => { if (!f.clocked) { g.hud.toast('Clock in first. Payroll will not forgive you.'); return; }
         f.radio = true; W.radioMesh.visible = false; W.radioLed.visible = false; g.sound.pickup(); g.flashOn = true; g.hud.toast('Radio + flashlight.   [F] flashlight', 3);
         this.say([[DEE, 'Hey, you on? It\'s Dee up front. Quiet night, but I\'ve got two for you already.', 4.2],
@@ -72,7 +80,19 @@ export class Story {
       onHoldStart: () => g.sound.burst({ f: 1200, q: 3, peak: 0.25, hold: 0.2, rel: 0.1 }), use: () => this.breakerReset() });
     add({ mesh: W.panelMesh, range: 2.2, enabled: () => f.power || f.breaker, prompt: () => 'Panel DH-1', use: () => g.hud.toast(f.breaker ? 'Main is on. Get out.' : 'Everything\'s on. For now.') });
     // ---- Christmas-shift interactions ----
-    add({ mesh: W.timeclockMesh, range: 2.2, hold: 0.9, enabled: () => f.phase === 'clockout', prompt: () => 'Clock out — swipe badge', use: () => this.clockOut() });
+    // ---- 6:51 AM: the hand-in at the front desk, then the McLean main in the shop ----
+    add({ mesh: W.radioPick, range: 2.2, enabled: () => f.radioIn, prompt: () => 'Radio charger (empty)', use: () => g.hud.toast('Empty. Your radio\'s in the tray at the front desk.', 3) });
+    add({ mesh: W.radioTrayMesh, range: 2.2, hold: 0.8, enabled: () => f.phase === 'turnin' && !f.radioIn, prompt: () => 'Turn in your radio', onHoldStart: () => g.sound.ctx && g.sound.burst({ f: 900, q: 2, peak: 0.12, rel: 0.1 }), use: () => this.turnIn('radio') });
+    add({ mesh: W.radioTrayMesh, range: 2.2, enabled: () => f.radioIn, prompt: () => 'Radio return', use: () => g.hud.toast('Your radio. Signed over to day shift.', 2.5) });
+    add({ mesh: W.keyDropMesh, range: 2.2, hold: 0.8, enabled: () => f.phase === 'turnin' && !f.keysIn, prompt: () => 'Turn in your keys — ENG ring + DuBose key', onHoldStart: () => g.sound.ctx && g.sound.jingle(), use: () => this.turnIn('keys') });
+    add({ mesh: W.keyDropMesh, range: 2.2, enabled: () => f.keysIn, prompt: () => 'Key drop', use: () => g.hud.toast('Your keys are in there. Day shift has them now.', 2.5) });
+    add({ mesh: W.deePick, range: 3.4, enabled: () => !['desk', 'turnin', 'mc'].includes(f.phase), prompt: () => 'Dee', use: () => g.hud.toast(f.phase === 'walkback' ? 'She\'s already back on the audit screen. Go close up.' : 'Dee.', 2.5) });
+    add({ mesh: W.mdpMesh, range: 2.4, enabled: () => f.phase === 'chase' && f.mdp < 2, hold: () => [1.7, 1.1][f.mdp],
+      prompt: () => ['MDP-1 TRIPPED — pump the charging handle', 'Push CLOSE'][f.mdp],
+      onHoldStart: () => { const s = g.sound; if (!s.ctx) return; if (f.mdp === 0) { for (let i = 0; i < 5; i++) s.burst({ f: 1600, q: 5, peak: 0.25, rel: 0.05, t0: s.t + 0.05 + i * 0.32 }); this._pump = 1.7; } else s.burst({ f: 1200, q: 3, peak: 0.25, hold: 0.2, rel: 0.1 }); },
+      use: () => { if (f.mdp === 0) { f.mdp = 1; g.sound.ctx && g.sound.clunk(); g.hud.toast('Springs charged. CHARGED flag\'s showing. Now CLOSE.', 2.5); } else this.mainReset(); } });
+    add({ mesh: W.mdpMesh, range: 2.4, enabled: () => f.phase !== 'chase' || f.mdp >= 2, prompt: () => 'MDP-1 · McLean main', use: () => g.hud.toast(f.mdp >= 2 ? 'Main\'s closed. Normal power.' : 'McLean main. Closed. Leave it alone.', 2.5) });
+    W.doors.lobbyL.onLocked = W.doors.lobbyR.onLocked = () => this.poundLobby();
     add({ mesh: W.thermoMesh, range: 2.0, enabled: () => ['sewing', 'voices'].includes(f.phase), prompt: () => 'Thermostat',
       use: () => { f.thermo = true; g.sound.clunk(); g.hud.toast('Set to 72°. Reading 38°F. You can see your breath.', 3.5); } });
     add({ mesh: W.radMesh, range: 2.2, enabled: () => f.phase === 'sewing' && !f.rad, hold: 2.0, prompt: () => 'Open the radiator valve',
@@ -151,6 +171,7 @@ export class Story {
     this.timers = []; this.endPeek(); this.queue = []; g.hud.sub('', ''); this.subT = 0; g.sound.ctx && g.sound.stopVoice();
     this.blink.meter = 1; this.blink.lid = 0; this.blink.forced = 0; g.flashOn = true; S.bashT = 0; S._graceSet = false; S.seenEver = false;
     if (this.cp.id === 'E') { this.slamState(false); }
+    else if (this.cp.id === 'G') { this.chaseState(false); }
     else if (this.cp.id === 'F') { this.mcleanHuntState(true); g.setView(31.0, -31.5, Math.PI / 2, 0); this.obj(this.wo117Obj()); }
     else {
       for (const d of [W.doors.butlerDoor, W.doors.suiteDoor, W.doors.duboseDoor]) { d.broken = false; d.locked = false; d.setOpen(true, false); }
@@ -170,17 +191,17 @@ export class Story {
   }
   end() {
     const g = this.g; this.f.ended = true; this.S.active = false; this.endPeek(); g.sound.clunk(true); g.post.uniforms.glitch.value = 1; g.sound.setMuffle(20000);
-    this.warm && this.warm.set(0); this.farSong && this.farSong.stop(0.3);
-    g.showEnd(`You clocked out at ${this._outTime || this.clockStr()} on Christmas morning and walked out under the dock light. You didn't look back.<br><br>
-      The day crew found the roll-up door rattling on its track and nobody on the dock.<br>
-      Room 117 has heat. The DuBose sewing room read 71°F by eight, and nobody could say why it had been cold.<br><br>
+    this.warm && this.warm.set(0); this.chaseSong && this.chaseSong.stop(0.3); this.heart && this.heart.stop();
+    g.showEnd(`The main closed at ${this._mainTime || this.clockStr()} on Christmas morning. The lights came up, the hum came back, and the singing stopped like somebody had shut a door on it.<br><br>
+      Day shift found you in the shop with the door shut, sitting on the floor by MDP-1 with your flashlight still on. Your radio and keys were in the tray at the front desk, signed over at 6:51.<br>
+      Dee's board never logged an outage. Room 117 has heat. The DuBose sewing room read 71°F by eight, and nobody could say why it had been cold.<br><br>
       Some rooms in the old house stay cold at Christmas, whatever the thermostat says.<br><br><b>END OF SHIFT</b>`);
   }
 
   // ================= Christmas-shift continuation =================
   after(sec, fn) { this.timers.push({ t: sec, fn }); }
   closeWO(id) { const g = this.g; const t = this.tickets.find(t => t.id === id); if (!t || t.done) return; t.done = true; g.hud.tickets(this.tickets); g.sound.ding(); g.hud.toast(id + '  CLOSED  · ' + this.clockStr(), 3); }
-  placeName(reg) { return ({ mclean: 'McLean Hall', room117: 'McLean · Rm 117', bath117: 'McLean · Rm 117', pantry: 'McLean Hall', terrace: 'Terrace', corridor: 'Service Corridor', dock: 'Loading Dock' })[reg] || 'DuBose Home'; }
+  placeName(reg) { return ({ lobby: 'McLean · Front Desk', office: 'Engineering Shop', stairB: 'Stair B', mclean: 'McLean Hall', room117: 'McLean · Rm 117', bath117: 'McLean · Rm 117', pantry: 'McLean Hall', terrace: 'Terrace', corridor: 'Service Corridor', dock: 'Loading Dock' })[reg] || 'DuBose Home'; }
   wo117Obj() { return 'WO-4474: No heat — Room 117 (McLean hall, north side)<br>It\'s still out there. Shut doors behind you · HOLD [Q] / [RIGHT MOUSE] at a door to peek'; }
 
   // back inside McLean after the breaker: catch your breath, then Dee calls about the sewing room
@@ -252,7 +273,7 @@ export class Story {
     else { g.setView(56.9, -47.7, 0, 0); this.setGroup('haunt', true, 0.5, 0.12); }
     st.visible = true; st.position.set(spot.x, W.groundY(spot.x, spot.z), spot.z); st.rotation.y = Math.atan2(p.x - st.position.x, p.z - st.position.z);
     if (!live) g.player.yaw = Math.atan2(-(st.position.x - p.x), -(st.position.z - p.z));
-    S.active = true; S.hunting = false; S.huntDelay = live ? 2.8 : 2.2; S._graceSet = false; S.seenEver = false; S.farSpeed = 9; S.nearSpeed = 6.8; S.bashT = 0;
+    S.active = true; S.hunting = false; S.huntDelay = live ? 2.8 : 2.2; S._graceSet = false; S.seenEver = false; S.farSpeed = 9; S.nearSpeed = 6.8; S.breakT = 3.6; S.bashT = 0;
     this.obj('Get out — past it into the back hall, through the stair hall, out the side door, back to McLean');
     this.saveCP('E');
   }
@@ -268,7 +289,7 @@ export class Story {
   }
   mcleanHuntState(retry) {
     const S = this.S, st = this.statue, p = this.g.player.pos, f = this.f; f.phase = 'wo117';
-    S.active = true; st.visible = true; S.farSpeed = 3.0; S.nearSpeed = 4.6; S.hunting = false; S.huntDelay = retry ? 6 : 60; S._graceSet = true; S.bashT = 0; // live: held until Dee finishes (reachMcLean2), then a short beat
+    S.active = true; st.visible = true; S.farSpeed = 3.0; S.nearSpeed = 4.6; S.breakT = 3.6; S.hunting = false; S.huntDelay = retry ? 6 : 60; S._graceSet = true; S.bashT = 0; // live: held until Dee finishes (reachMcLean2), then a short beat
     if (retry || Math.hypot(st.position.x - p.x, st.position.z - p.z) < 12) st.position.set(43, 0, -31.5);
     const td = this.W.doors.terraceDoor; td.broken = false; td.locked = false;
     if (retry && !this.tickets.find(t => t.id === 'WO-4474')) { this.tickets.push({ id: 'WO-4474', text: 'No heat — Rm 117 PTAC (guest moved to 121)' }); this.g.hud.tickets(this.tickets); }
@@ -277,25 +298,135 @@ export class Story {
   wo117Done() {
     const g = this.g, f = this.f, S = this.S; this.closeWO('WO-4474');
     S.active = false; this._vanish = true; this.after(1.0, () => this.distantScrape(new THREE.Vector3(44, 1, -31.5)));
-    this.say([[DEE, '117\'s showing heat. ...That\'s the night, hon.', 3], [DEE, 'Day crew\'s pulling in. Go clock out. And — Merry Christmas.', 3.4]], () => {
-      g.cut('6:52 AM', () => { g.time = Math.max(g.time, 86400 + 6 * 3600 + 52 * 60); f.phase = 'clockout'; this.obj('Clock out — time clock on the dock wall<br>McLean hall → EMPLOYEES ONLY door → service corridor → dock'); }); });
+    this.say([[DEE, '117\'s showing heat. ...That\'s the night, hon.', 3], [DEE, 'Day shift\'s pulling in. Come on up to the front desk and bring me your radio and your keys.', 4.6]], () => {
+      g.cut('6:51 AM', () => { g.time = Math.max(g.time, 86400 + 6 * 3600 + 51 * 60); this.frontDesk(); }); });
   }
-  clockOut() {
-    const g = this.g, f = this.f, W = this.W, s = g.sound, st = this.statue; f.phase = 'out'; this._outTime = this.clockStr();
-    if (s.ctx) s.punch(); g.hud.toast('OUT  ' + this._outTime + '   ·   ENGINEERING / 3RD SHIFT', 3.5); this.obj(''); this.farSong && this.farSong.stop(0.5);
-    const face = () => { const p = g.player.pos; st.rotation.y = Math.atan2(p.x - st.position.x, p.z - st.position.z); };
-    this.after(1.3, () => { st.visible = true; st.position.set(9.7, 0, 0.9); face(); this.distantScrape(new THREE.Vector3(9.7, 1, 0.9)); this.say([[ME, '...No. No, no, no.', 1.8]]); });
-    this.after(3.4, () => { this.setGroup('dock', false); if (s.ctx) s.powerDown(); });
-    this.after(4.1, () => { const p = g.player.pos; const d = new THREE.Vector3(9.7 - p.x, 0, 0.9 - p.z); const l = d.length(); if (l > 2.8) d.multiplyScalar(2.6 / l); st.position.set(p.x + d.x, 0, p.z + d.z); face(); this.setGroup('dock', true, 0.55, 0.35); if (s.ctx) s.sting(); });
-    this.after(5.8, () => { this.setGroup('dock', false); if (s.ctx) { s.slam(W.anchors.rollup); s.rattle(W.anchors.rollup); } g.shake = 1; g.post.uniforms.glitch.value = 1; });
-    this.after(6.5, () => { st.visible = false; this.setGroup('dock', true, 1, 0.05); });
-    this.after(7.6, () => this.end());
+  // ================= 6:51 AM: the front desk, then the dark =================
+  // In person: lights on, fire doors held open, nothing in the hall. You hand over the radio and the keys.
+  frontDesk() {
+    const g = this.g, f = this.f, W = this.W, S = this.S, st = this.statue; this.endPeek(); this.queue = []; g.hud.sub('', ''); this.subT = 0;
+    S.active = false; S.hunting = false; this._vanish = false; st.visible = false; st.position.set(0, -50, 0); this.scrape && this.scrape.set(0);
+    this.song && this.song.stop(); this.song = null;
+    f.phase = 'desk'; W.doors.lobbyL.holdOpen(); W.doors.lobbyR.holdOpen();
+    const od = W.doors.officeDoor; od.broken = false; od.locked = false; // the shop: still open, the way you left it
+    this.setGroup('lobby', true, 1, 0); this.setGroup('mclean', true, 1, 0);
+    g.player.vel.set(0, 0, 0); g.setView(DESK_SPAWN.x, DESK_SPAWN.z, DESK_SPAWN.yaw, DESK_SPAWN.pitch); g.player.frozen = true; g.flashOn = false;
+    this.obj('');
+    this.say([[DEE_LIVE, 'There you are. Long night, huh?', 2.4], [ME, 'Longest one yet.', 1.8],
+      [DEE_LIVE, 'Night audit\'s done, and day shift\'s in the lot. Radio and keys go in the tray. I\'ll hand them off to the day guys.', 7.4]], () => {
+      g.player.frozen = false; f.phase = 'turnin'; this.obj('Turn in your radio and your keys — the tray and the key drop on the desk'); });
+  }
+  turnIn(what) {
+    const g = this.g, f = this.f, W = this.W, s = g.sound;
+    if (what === 'radio') { f.radio = false; f.radioIn = true; W.deskRadio.visible = true; s.ctx && s.clunk(); g.hud.toast('Radio turned in. It\'s day shift\'s now.', 2.5); }
+    else { f.keysIn = true; g.inv.delete('DuBose key'); W.deskKeys.visible = true; s.ctx && s.jingle(); g.hud.toast('Keys turned in — the ENG ring and the DuBose key.', 2.5); }
+    if (!(f.radioIn && f.keysIn)) return;
+    f.phase = 'mc'; this.obj('');
+    this.say([[DEE_LIVE, 'That\'s everything. Even the DuBose key. Thank you, hon.', 3.8], [ME, 'Merry Christmas, Dee.', 2.0],
+      [DEE_LIVE, 'Merry Christmas, hon. The shop\'s still open, so pull the door shut on your way out. Then go home and get some sleep.', 7.4]], () => {
+      f.phase = 'walkback'; this.obj('Close up the shop<br>McLean hall → EMPLOYEES ONLY door → service corridor → dock → shop'); });
+  }
+  nearDoor(d, r) { const p = this.g.player.pos; return Math.hypot(p.x - d.x, p.z - d.z) < r; }
+  chaseObj() { return 'No radio. Nobody to call.<br>Get to the shop and reset the McLean main (MDP-1)<br>McLean hall → EMPLOYEES ONLY door → service corridor → dock → shop'; }
+  // the instant you step out of the lobby: the whole building drops. Fire doors let go behind you. You can't call anyone.
+  blackout() {
+    const g = this.g, W = this.W, D = W.doors, s = g.sound; this.chaseState(true);
+    if (s.ctx) s.powerDown(); g.shake = 0.7; g.post.uniforms.glitch.value = 0.9;
+    this.after(0.4, () => { for (const d of [D.lobbyL, D.lobbyR]) { d.setOpen(false, false); if (s.ctx) s.slam(new THREE.Vector3(d.x, 1.4, d.z)); } g.shake = Math.max(g.shake, 0.9); });
+    this.after(1.3, () => { const sd = D.staffDoor; if (sd.open && !this.nearDoor(sd, 1.6)) { sd.setOpen(false, false); s.ctx && s.slam(new THREE.Vector3(sd.x, 1.4, sd.z)); } });
+    this.after(1.6, () => this.say([[ME, '...Dee?', 1.8]]));
+    this.after(3.4, () => g.hud.toast('You reach for your radio.\nIt\'s in the tray at the front desk.', 4.2));
+    this.after(5.4, () => this.say([[ME, 'Dee! ...DEE!', 1.8]]));
+    this.after(8.0, () => this.obj(this.chaseObj()));
+  }
+  // checkpoint G state (live from blackout(), or on retry): power out, no radio, 173 at the far end of McLean hall
+  chaseState(live) {
+    const g = this.g, f = this.f, W = this.W, D = W.doors, S = this.S, st = this.statue, s = g.sound;
+    f.phase = 'chase'; f.mainPower = false; f.mdp = 0; f.radio = false; f.radioIn = true; f.keysIn = true; g.inv.delete('DuBose key');
+    W.deskRadio.visible = true; W.deskKeys.visible = true; W.mdpTripped.visible = true; W.mdpClosed.visible = false; if (W.mdpHandle) W.mdpHandle.rotation.z = 0;
+    this.ch = { t: 0, surgeT: live ? 7.4 : 0.8, surge: 0, stingT: 0, songT: live ? 7.4 : 0.3, beats: {} };
+    this.chaseLights = W.vlights.filter(v => CHASE_GROUPS.includes(v.group));
+    for (const v of this.chaseLights) { if (v._fl0 === undefined) v._fl0 = v.flicker; v.on = false; v.flicker = 0; v.level = 1; v._cOn = false; v._cT = Math.random() * 2; }
+    if (s.ctx) for (const L of s.loops) L.set(0);
+    g.flashOn = true;
+    for (const d of [D.lobbyL, D.lobbyR]) { d.broken = false; d.locked = true; d.lockedMsg = 'Won\'t budge. The hold-opens let go when the power dropped and the latch won\'t give.'; if (!live) { d.setOpen(false, false); d.angle = 0; d.pivot.rotation.y = 0; } }
+    const sd = D.staffDoor; sd.broken = false; sd.locked = false; sd.sturdy = false; if (!live) sd.setOpen(false, false); // it comes through this one
+    for (const d of [D.stairDoor, D.r117]) { d.broken = false; d.locked = false; if (d.open && (!live || !this.nearDoor(d, 1.5))) d.setOpen(false, false); }
+    const od = D.officeDoor; od.broken = false; od.locked = false; od.sturdy = true; if (!od.open) od.setOpen(true, false);
+    if (!live) { g.player.vel.set(0, 0, 0); g.setView(CHASE_START.x, CHASE_START.z, CHASE_START.yaw, 0); this.obj(this.chaseObj()); }
+    const p = g.player.pos; st.visible = true; st.position.set(19.5, 0, -31.5); st.rotation.y = Math.atan2(p.x - 19.5, p.z + 31.5);
+    S.active = true; S.hunting = false; S.huntDelay = live ? 10 : 2.5; S._graceSet = false; S.seenEver = false; S.farSpeed = 8; S.nearSpeed = 4.6; S.breakT = 1.6; S.bashT = 0; this.navT = 0;
+    this.chaseSong && this.chaseSong.stop(0.05); this.chaseSong = null; this.heart && this.heart.stop(); this.heart = s.ctx ? s.heartbeat(0.07) : null;
+    this.saveCP('G');
+  }
+  startSong() { const s = this.g.sound, st = this.statue; if (!s.ctx) return; this._sp = new THREE.Vector3(st.position.x, st.position.y + 1.5, st.position.z);
+    this.chaseSong = s.lullaby(this._sp, 0.24, { gap: 1.3, ref: 2.2, roll: 1.0 }); }
+  poundLobby() { const g = this.g, s = g.sound; if (this.f.phase !== 'chase') return; const a = this.W.anchors.lobbyDoors;
+    if (s.ctx) { s.bash(a); setTimeout(() => s.ctx && s.bash(a), 260); } g.shake = Math.max(g.shake, 0.3);
+    if (!this.ch.pounded) { this.ch.pounded = true; this.say([[ME, 'Dee! It\'s me — open the door!', 2.2], [ME, '...', 2.6]]); } }
+  // blackout: you only "see" it in your flashlight beam, or when a light flickers on near it
+  litAt(wp, dist) { const g = this.g, cam = g.camera;
+    if (g.flashOn && dist < 18) { const fw = this._fw2 || (this._fw2 = new THREE.Vector3()); cam.getWorldDirection(fw); const d = this._v2 || (this._v2 = new THREE.Vector3()); d.subVectors(wp, cam.position).normalize(); if (d.dot(fw) > 0.9) return true; }
+    for (const v of this.W.vlights) if (v.eff > 0.01 && v.pos.distanceToSquared(wp) < (v.dist * 0.55) ** 2) return true;
+    return false; }
+  updateChaseLights(dt) {
+    const ch = this.ch, s = this.g.sound, p = this.g.player.pos;
+    ch.surgeT -= dt; if (ch.surgeT <= 0) { ch.surge = 0.55 + Math.random() * 0.75; ch.surgeT = 4.2 + Math.random() * 4.3; ch.surges = (ch.surges || 0) + 1;
+      if (s.ctx) { let n = null, nd = 1e9; for (const v of this.chaseLights) { const d = v.pos.distanceTo(p); if (d < nd) { nd = d; n = v; } } if (n && nd < 14) s.buzz(0.35, n.pos); } }
+    if (ch.surge > 0) ch.surge -= dt;
+    for (const v of this.chaseLights) {
+      v._cT -= dt; if (v._cT <= 0) {
+        if (ch.surge > 0) { v._cOn = !v._cOn; v._cT = 0.04 + Math.random() * 0.13; }
+        else { v._cOn = Math.random() < 0.06; v._cT = v._cOn ? 0.04 + Math.random() * 0.09 : 0.6 + Math.random() * 2.6; } }
+      v.on = !!v._cOn; v.level = ch.surge > 0 ? 0.85 : 0.6; if (v.on) ch.flashes = (ch.flashes || 0) + 1;
+    }
+  }
+  updateChase(dt, reg) {
+    const g = this.g, ch = this.ch, W = this.W, D = W.doors, s = g.sound, p = g.player.pos, st = this.statue, b = ch.beats; ch.t += dt;
+    this.updateChaseLights(dt);
+    if (!this.chaseSong && ch.t >= ch.songT && s.ctx) this.startSong();
+    const sd = Math.hypot(st.position.x - p.x, st.position.z - p.z);
+    if (this.chaseSong) { const tgt = this._v3 || (this._v3 = new THREE.Vector3()); tgt.set(st.position.x, st.position.y + 1.5, st.position.z); this._sp.lerp(tgt, Math.min(1, dt * 1.5)); this.chaseSong.setPos(this._sp); this.chaseSong.clarity(1 - (sd - 2) / 18); }
+    if (this.heart) { const k = Math.max(0, 1 - sd / 16); this.heart.rate = 1.1 + k * 1.5; this.heart.vol = 0.05 + k * 0.08; }
+    ch.stingT -= dt; if (this.S.seen && sd < 6 && ch.stingT <= 0 && ch.surge > 0) { ch.stingT = 7; s.ctx && s.sting(); } // the flicker catches it close
+    // doors along the route open and close on their own, once each (never the one you need, never on top of you)
+    const at = d => new THREE.Vector3(d.x, 1.4, d.z);
+    if (!b.r117 && reg === 'mclean' && p.x > 4.5) { b.r117 = true; const d = D.r117; d.setOpen(true, false); s.ctx && s.slam(at(d)); this.after(0.9, () => { d.setOpen(false, false); s.ctx && s.slam(at(d)); }); }
+    if (!b.staff && reg === 'corridor' && p.z > -28.4) { b.staff = true; const d = D.staffDoor;
+      if (d.open && !d.broken && !this.nearDoor(d, 1.0) && Math.hypot(st.position.x - d.x, st.position.z - d.z) > 1.4) { d.setOpen(false, false); s.ctx && s.slam(at(d)); g.shake = Math.max(g.shake, 0.6); } }
+    if (!b.stairOpen && reg === 'corridor' && p.z > -17) { b.stairOpen = true; const d = D.stairDoor; d.setOpen(true, false); if (s.ctx) { s.slam(at(d)); s.creak(0.15, s.panner(at(d))); } }
+    if (b.stairOpen && !b.stairShut && reg === 'corridor' && p.z > -8.5) { b.stairShut = true; const d = D.stairDoor; if (!this.nearDoor(d, 1.2)) { d.setOpen(false, false); s.ctx && s.slam(at(d)); } }
+    if (!b.dock && reg === 'dock') { b.dock = true; const od = D.officeDoor;
+      if (s.ctx) { s.rattle(W.anchors.rollup); this.after(0.45, () => s.rattle(W.anchors.rollup)); }
+      if (od.open) { this.after(0.5, () => { if (this.nearDoor(od, 1.3)) return; od.setOpen(false, false); s.ctx && s.slam(at(od)); g.shake = Math.max(g.shake, 0.5); });
+        this.after(1.7, () => { if (od.open || this.nearDoor(od, 1.3)) return; od.setOpen(true, false); s.ctx && s.creak(0.12, s.panner(at(od))); // swings back open on its own (never left half-open in your way)
+          this.after(0.9, () => { if (od.open && !this.nearDoor(od, 1.6)) { od.setOpen(false, false); s.ctx && s.slam(at(od)); } }); }); }
+      this.after(1.0, () => this.say([[ME, 'Come on, come on...', 1.6]])); }
+    if (!b.shop && reg === 'office') { b.shop = true; this.obj('Reset MDP-1 — the McLean main, east wall by the key cabinet<br>HOLD [E]: pump the charging handle, then push CLOSE');
+      if (D.officeDoor.open) g.hud.toast('Shut the door behind you — [E]. It can\'t get through a shut door.', 4.5); }
+    if (W.mdpHandle) { if (this._pump > 0) { this._pump -= dt; W.mdpHandle.rotation.z = -0.5 * Math.abs(Math.sin(this._pump * 9)); } else if (this.f.mdp === 1) W.mdpHandle.rotation.z = -0.15; }
+  }
+  // MDP-1 closes: power back, the flicker and the singing stop, it's gone. A quiet beat. Day shift backs a truck up to the dock. End.
+  mainReset() {
+    const g = this.g, f = this.f, W = this.W, S = this.S, s = g.sound, st = this.statue; f.mdp = 2; f.mainPower = true; f.phase = 'restored'; this._mainTime = this.clockStr(); this._pump = 0; S.breakT = 3.6;
+    W.mdpTripped.visible = false; W.mdpClosed.visible = true; if (W.mdpHandle) W.mdpHandle.rotation.z = 0;
+    if (s.ctx) { s.powerUp(); for (const L of s.loops) L.set(L.base); }
+    for (const v of this.chaseLights || []) { v.on = true; v.level = 1; v.flicker = v._fl0 || 0; }
+    this.chaseSong && this.chaseSong.stop(0.04); this.chaseSong = null; this.heart && this.heart.stop(); this.heart = null;
+    S.active = false; S.hunting = false; st.visible = false; st.position.set(0, -50, 0); this.scrape && this.scrape.set(0); this.endPeek();
+    W.doors.staffDoor.sturdy = true;
+    g.post.uniforms.glitch.value = 0.7; g.shake = 0.35; this.obj('');
+    g.hud.toast('MDP-1  CLOSED  · ' + this._mainTime, 3);
+    this.after(1.8, () => this.say([[ME, '...', 1.4], [ME, 'It stopped.', 2.0]]));
+    this.after(4.4, () => { if (s.ctx) { s.rattle(W.anchors.rollup); s.backup(W.anchors.rollup, 5); } });
+    this.after(6.4, () => this.say([[ME, 'Day shift.', 1.6]]));
+    this.after(8.6, () => this.end());
   }
   // 173 pounded on a door it can't break: it backs off somewhere you can't see, farther away than it was
   withdraw() {
     const g = this.g, S = this.S, st = this.statue, p = g.player.pos; this.bfs(p.x, p.z, true);
     const cur = this.dist[this.cellOf(st.position.x, st.position.z)]; const save = st.position.clone(); let best = null, bd = 1e9;
-    for (const [x, z] of LURKS) { const d = this.dist[this.cellOf(x, z)]; if (d >= 1e9 || d < Math.min(cur, 1e8) + 16 || Math.hypot(x - p.x, z - p.z) < 6) continue;
+    for (const [x, z] of (this.f.phase === 'chase' ? LURKS_G : LURKS)) { const d = this.dist[this.cellOf(x, z)]; if (d >= 1e9 || d < Math.min(cur, 1e8) + 16 || Math.hypot(x - p.x, z - p.z) < 6) continue;
       st.position.set(x, this.W.groundY(x, z), z); const seen = this.isSeen(); st.position.copy(save); if (seen) continue; if (d < bd) { bd = d; best = [x, z]; } }
     if (best) st.position.set(best[0], this.W.groundY(best[0], best[1]), best[1]);
     S.hunting = false; S.huntDelay = 4.5 + Math.random() * 2; S._graceSet = true; S.bashT = 0; this.navT = 0;
@@ -331,9 +462,6 @@ export class Story {
     if (f.phase === 'slam' && reg === 'backhall' && !this._hideTold) { this._hideTold = true; g.hud.toast('Linen closet, right there: duck in and shut the door. It\'ll pound, but it can\'t get through.\nHOLD [Q] or [RIGHT MOUSE] at a closed door to peek through the crack.', 7); }
     if (f.phase === 'slam' && reg === 'mclean' && p.x < 33.7) this.reachMcLean2();
     if (this._vanish && this.statue.visible && !this.isSeen()) { this._vanish = false; this.statue.visible = false; this.scrape && this.scrape.set(0); }
-    if (f.phase === 'clockout' && reg === 'corridor' && !this._corrSong) { this._corrSong = true;
-      this.after(2.0, () => { const v = W.vlights.find(v => v.group === 'corr' && v.pos.z === -18); if (v) v.flicker = 0.7; if (g.sound.ctx) this.farSong = g.sound.lullaby(new THREE.Vector3(9.2, 1.6, -29.6), 0.07, { gap: 99, roll: 0.6 }); });
-      this.after(11, () => { this.farSong && this.farSong.stop(1.2); }); }
     // the cold: frost at the edges of the lens, breath, everything muffled
     const coldTarget = reg === 'sewing' && ['sewing', 'voices'].includes(f.phase) ? 1 : 0;
     this.cold += (coldTarget - this.cold) * Math.min(1, dt * (coldTarget > this.cold ? 0.9 : 0.45));
@@ -385,6 +513,7 @@ export class Story {
     for (const lp of st.userData.checkPoints) {
       const wp = this._v.copy(lp).applyMatrix4(st.matrixWorld); const dist = wp.distanceTo(camPos); if (dist > 40) continue;
       const vc = wp.clone().applyMatrix4(cam.matrixWorldInverse); if (vc.z > -0.05) continue; const ndc = wp.clone().project(cam); if ( Math.abs(ndc.x) > 1.02 || Math.abs(ndc.y) > 1.02) continue;
+      if (this.f.phase === 'chase' && !this.litAt(wp, dist)) continue; // blackout: you only see it in your flashlight beam or when a light catches
       this._ray.set(camPos, wp.clone().sub(camPos).normalize()); this._ray.far = dist - 0.1;
       const occ = this.peekDoor ? (this._occ || (this._occ = this.W.occluders.filter(o => o !== this.peekDoor.panel))) : this.W.occluders;
       const hit = this._ray.intersectObjects(occ, false); if (!hit.length) return true;
@@ -425,7 +554,7 @@ export class Story {
     const S = this.S, g = this.g; S.bashT += dt; S.bashTick -= dt;
     if (S.bashTick <= 0) { S.bashTick = 0.85; g.sound.bash(new THREE.Vector3(door.x, 1, door.z)); door.angle += (Math.random() - 0.5) * 0.08; g.shake = Math.max(g.shake, 0.25); }
     if (door.sturdy) { if (S.bashT > 3.3) { S.bashT = 0; this.withdraw(); } return; }
-    if (S.bashT > 3.6) { S.bashT = 0; door.broken = true; door.setOpen(true, false); door.pivot.rotation.y = door.target; door.angle = door.target; g.sound.bash(new THREE.Vector3(door.x, 1, door.z)); g.sound.creak(0.2); }
+    if (S.bashT > (S.breakT ?? 3.6)) { S.bashT = 0; door.broken = true; door.setOpen(true, false); door.pivot.rotation.y = door.target; door.angle = door.target; g.sound.bash(new THREE.Vector3(door.x, 1, door.z)); g.sound.creak(0.2); }
   }
 
   // ---------------- per-frame ----------------
@@ -445,8 +574,10 @@ export class Story {
     // radio queue
     if (this.subT > 0) { this.subT -= dt; if (this.subT <= 0) g.hud.sub('', ''); }
     if (this.subT <= 0 && this.queue.length) { const q = this.queue.shift(); if (q.fn) q.fn(); else { g.hud.sub(q.who, q.text); this.subT = q.dur + 0.4;
-      if (q.who === DEE && g.sound.ctx) { const vd = g.sound.voice(q.text); // Dee's recorded radio take; subtitle holds for its real length
-        if (vd) { this.subT = vd + 0.3; this.voiceStats.voiced++; } else { g.sound.radio(q.dur * 0.85); this.voiceStats.fallback++; } } } }
+      if (q.who === DEE && g.sound.ctx) { if (f.radioIn) this.voiceStats.radioAfterTurnIn++; const vd = g.sound.voice(q.text); // Dee's recorded radio take; subtitle holds for its real length
+        if (vd) { this.subT = vd + 0.3; this.voiceStats.voiced++; } else { g.sound.radio(q.dur * 0.85); this.voiceStats.fallback++; } }
+      else if (q.who === DEE_LIVE) { const vd = g.sound.ctx ? g.sound.voice(q.text, { pos: W.anchors.deeHead }) : 0; // in person: from her chair, never through the radio
+        if (vd) { this.subT = vd + 0.3; this.voiceStats.liveVoiced++; } else this.voiceStats.liveFallback++; } } } // missing take: subtitle only, no squelch
     this.updateBlink(dt);
     // doors animate
     for (const d of W.doors) { const tgt = d.peekA && !d.open ? d.peekA : d.target; if (d.open) d.peekA = 0; d.angle += (tgt - d.angle) * Math.min(1, dt * (d.peekA ? 9 : 7)); d.pivot.rotation.y = d.angle; d.pivot.updateMatrixWorld(true); }
@@ -463,10 +594,15 @@ export class Story {
     if (this.S.active) this.updateStatue(dt);
     if (f.phase === 'escape' && p.x < 33.7 && reg === 'mclean' && !f.ended) this.afterFirstEscape();
     this.updateHaunt(dt, reg);
+    if (f.phase === 'walkback' && reg === 'mclean' && p.z < -30.45) this.blackout(); // the instant you leave the lobby
+    if (f.phase === 'chase' && this.ch) this.updateChase(dt, reg);
     // death camera wrench
     if (this.dying) { this.snapT += dt; if (this.snapT > 0.45) g.post.uniforms.dead.value = 1; if (this.snapT > 1.2 && g.state === 'play') { g.showDead('SIGNAL LOST · ' + this.clockStr() + ' · ' + this.placeName(reg)); return; } g.player.pitch = Math.min(0.2, g.player.pitch + dt * 2); g.camera.rotation.z = Math.min(1.4, this.snapT * 9) * -1; }
   }
   always(dt) {
+    const H = this.W.deeHead; if (H) { const p = this.g.player.pos, hp = this.W.anchors.deeHead; const talk = ['desk', 'turnin', 'mc', 'walkback'].includes(this.f.phase) && Math.hypot(p.x - hp.x, p.z - hp.z) < 7;
+      const ty = talk ? Math.max(-0.75, Math.min(0.75, Math.atan2(-(p.x - hp.x), -(p.z - hp.z)))) : -0.5, tx = talk ? 0.06 : -0.25; // looks up at you, or back down at the audit screen
+      H.rotation.y += (ty - H.rotation.y) * Math.min(1, dt * 4); H.rotation.x += (tx - H.rotation.x) * Math.min(1, dt * 4); H.rotation.order = 'YXZ'; }
     if (this.tvOn && this.W.tvMat) { const v = 0.35 + Math.random() * 0.4; this.W.tvMat.color.setRGB(v * 0.8, v * 0.85, v); this.W.tvLight.intensity = 0.5 + Math.random() * 0.4; this.W.tvLight.on = true; }
   }
 }

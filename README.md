@@ -3,6 +3,7 @@
 First-person, found-footage, in-browser horror. You're the 3rd-shift maintenance engineer at the Rizzo Center
 in Chapel Hill, working Christmas Eve. Clock in at the loading dock, close two work orders in McLean, then get sent over
 to the old DuBose house. Something is standing in the hall. And something in the sewing room is singing.
+At 6:51 on Christmas morning you hand your radio and keys to Dee at the front desk, and the power goes out on the walk back.
 
 ## Run it
 ```
@@ -29,19 +30,28 @@ Q or RIGHT MOUSE (hold, next to a closed door): peek through the crack. 173 can'
 10. The bar is empty: a glass, a pulled-out stool. Doors slam behind you; the bar door bangs open. The statue is in the room when you turn around.
     Slip past it into the back hall (the linen closet there is a hide spot: shut the door and it pounds, then backs off; hold Q / right mouse to peek).
 11. Back to McLean with it following. WO-4474: Room 117 PTAC (no heat): pull the cover, clean the filter, reset. Shut doors buy time.
-12. 6:52 AM: walk back to the dock and clock out (hold E). One last look.
-Checkpoints: power-out (A), breaker (B), after the slam in the bar (E), back in McLean for WO-4474 (F). Restart shift reloads.
+12. 117 has heat. Dee asks you to come up to the front desk. 6:51 AM, Dec 25: the lobby (off the west end of McLean hall).
+    Dee is at the night-audit station. Turn in your radio (radio tray) and your keys (key drop) — hold E on each. Merry Christmas, both ways.
+13. The second you step out of the lobby into McLean hall the whole building loses power. The lobby doors swing shut and lock behind you.
+    No radio, nobody to call. 173 is in the hall, the lights surge and flicker, doors bang open and shut on their own, and the lullaby is back.
+14. Get to the shop (still unlocked): EMPLOYEES ONLY door → service corridor → dock → maintenance office. Shut the shop door — it can't get through.
+    In the dark it only freezes when your flashlight or a flickering light is on it.
+15. Reset MDP-1, the McLean main breaker on the shop's east wall (hold E: pump the charging handle, then push CLOSE). Lights, hum, silence. End of shift.
+Checkpoints: power-out (A), breaker (B), after the slam in the bar (E), back in McLean for WO-4474 (F), the blackout just outside the lobby (G: retries the chase, not the conversation). Restart shift reloads.
 
 ## Credits / licensing
 - SCP-173 concept from the SCP Wiki (https://scp-wiki.wikidot.com/scp-173), CC BY-SA 3.0. Fan work.
 - The statue here is an original design (not the original sculpture). All geometry, textures (canvas-generated) and
   sounds (WebAudio-synthesized, plus Dee's generated radio voice) are original and created in code. No assets from any other game.
-- Dee's radio voice: synthetic, generated offline with Piper TTS (voice `en_US-kristin-medium`, trained on public-domain LibriVox
-  audio), then radio-processed in `voice/radio.py`. Not a recording or clone of any real person. Files in `audio/dee/`, map in `src/dee-lines.js`.
+- Dee's voice: synthetic, generated offline with Piper TTS (voice `en_US-kristin-medium`, trained on public-domain LibriVox
+  audio). Radio lines are radio-processed; her in-person lines at the front desk use a light room treatment instead (no radio hiss).
+  Not a recording or clone of any real person. Files in `audio/dee/` (d* = radio, l* = in person), map in `src/dee-lines.js`.
+  Dee in the lobby is a stylized figure built from simple shapes, not a likeness of anyone.
 - The Rizzo Center is a real place; layout is a compressed, inspired-by interpretation. Not affiliated or endorsed.
 - Three.js (MIT), see vendor/THREE-LICENSE.
 
 ## Dev
 - `node shoot.mjs "http://localhost:8123/?shots" '<json>'`: screenshots from given positions.
-- `node walk.mjs`: headless end-to-end test of the whole shift (clock-in → WOs → DuBose → death/retry → breaker → sewing room haunt → slam → death/retry E → hide/peek → McLean WO-4474 → death/retry F → clock out → end card).
-- Lady DuBose's haunt is audio + atmosphere only: an original synthesized hummed lullaby (not any existing song/carol), a single short distant cry, cold, an empty bar, slamming doors. Nothing is shown.
+- `node walk.mjs`: headless end-to-end test of the whole shift (clock-in → WOs → DuBose → death/retry → breaker → sewing room haunt → slam → death/retry E → hide/peek → McLean WO-4474 → death/retry F → 6:51 front desk → radio + keys → blackout → death/retry G → chase → MDP-1 → end card).
+- `node ending-test.mjs`: focused test of the 6:51 ending (desk state, turn-in, Merry Christmas, blackout threshold, no answer from Dee, flicker + song, fair-bot run, MDP-1, end card, checkpoint G retries). `SHOTS=1` writes `screenshots/ending-*.png`. `URL=` picks the server.
+- Lady DuBose's haunt is audio + atmosphere only: an original synthesized hummed lullaby (not any existing song/carol), a single short distant cry, cold, an empty bar, slamming doors. Nothing is shown. The same lullaby follows 173 during the 6:51 blackout.
