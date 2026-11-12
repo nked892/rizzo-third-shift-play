@@ -1,9 +1,11 @@
-# The Rizzo — Third Shift
+# The Rizzo
+### Third Shift
 
 First-person, found-footage, in-browser horror. You're the 3rd-shift maintenance engineer at the Rizzo Center
 in Chapel Hill, working Christmas Eve. Clock in at the loading dock, close two work orders in McLean, then get sent over
 to the old DuBose house. Something is standing in the hall. And something in the sewing room is singing.
 At 6:51 on Christmas morning you hand your radio and keys to Dee at the front desk, and the power goes out on the walk back.
+Get the lights back on, clock out at 7, and walk out into Christmas morning.
 
 ## Run it
 ```
@@ -38,8 +40,16 @@ Q or RIGHT MOUSE (hold, next to a closed door): peek through the crack. 173 can'
     No radio, nobody to call. 173 is in the hall, the lights surge and flicker, doors bang open and shut on their own, and the lullaby is back.
 14. Get to the shop (still unlocked): EMPLOYEES ONLY door → service corridor → dock → maintenance office. Shut the shop door — it can't get through.
     In the dark it only freezes when your flashlight or a flickering light is on it.
-15. Reset MDP-1, the McLean main breaker on the shop's east wall (hold E: pump the charging handle, then push CLOSE). Lights, hum, silence. End of shift.
-Checkpoints: power-out (A), breaker (B), after the slam in the bar (E), back in McLean for WO-4474 (F), the blackout just outside the lobby (G: retries the chase, not the conversation). Restart shift reloads.
+15. Reset MDP-1, the McLean main breaker on the shop's east wall (hold E: pump the charging handle, then push CLOSE). Lights, hum, silence. It's 7. Not the end yet.
+16. Clock out at the dock time clock (hold E; the swipe only takes now, not earlier in the night). The dock goes completely dark,
+    your flashlight dies, and the lullaby starts again. No statue this time. Just the dark and the humming.
+17. The employee-lot door unlocks and Chris, the day-shift engineering supervisor, comes in with a flashlight (tall, short black hair, oatmeal cardigan
+    over his work shirt, "Chris" name patch). The power comes back. He says you look pale as a sheet, tells you to go home and get some sleep, mentions something
+    on the radio about a containment breach at a research lab out in Triangle Park ("probably a bunch of hoopla"), and wishes you a Merry Christmas.
+18. Walk out the employee-lot door into the parking lot. Frost on the windshields, the sodium lights clicking off, birds. Look east and watch the sun come up
+    over the trees. End of shift.
+Checkpoints: power-out (A), breaker (B), after the slam in the bar (E), back in McLean for WO-4474 (F), the blackout just outside the lobby
+(G: retries the chase, not the conversation), and clock-out after MDP-1 (H: dock lit, clock-out objective). Restart shift reloads (Clint plays again).
 
 ## Credits / licensing
 - SCP-173 concept from the SCP Wiki (https://scp-wiki.wikidot.com/scp-173), CC BY-SA 3.0. Fan work.
@@ -52,12 +62,16 @@ Checkpoints: power-out (A), breaker (B), after the slam in the bar (E), back in 
 - Clint's voice: synthetic, generated offline with Piper TTS (voice `en_US-joe-medium`, CC0 dataset), with a light in-person dock-room
   treatment (not radio). Not a recording or clone of any real person. Files in `audio/clint/`, map in `src/clint-lines.js`.
   Clint on the dock is a stylized figure built from simple shapes (heavyset, bald, blue short-sleeve work shirt, black pants, cigarette), not a likeness.
+- Chris's voice: synthetic, generated offline with Piper TTS (voice `en_US-john-medium`, public-domain LibriVox dataset), pitched down 4 semitones
+  (formant-preserving) for a deep grumble, with an in-person dock-room treatment (not radio). Not a recording or clone of any real person.
+  Files in `audio/chris/`, map in `src/chris-lines.js`. Chris is a stylized figure built from simple shapes, not a likeness.
 - The Rizzo Center is a real place; layout is a compressed, inspired-by interpretation. Not affiliated or endorsed.
 - Three.js (MIT), see vendor/THREE-LICENSE.
 
 ## Dev
 - `node shoot.mjs "http://localhost:8123/?shots" '<json>'`: screenshots from given positions.
-- `node walk.mjs`: headless end-to-end test of the whole shift (Clint → clock-in → WOs → DuBose → death/retry → breaker → sewing room haunt → slam → death/retry E → hide/peek → McLean WO-4474 → death/retry F → 6:51 front desk → radio + keys → blackout → death/retry G → chase → MDP-1 → end card).
+- `node walk.mjs`: headless end-to-end test of the whole shift (Clint → clock-in → WOs → DuBose → death/retry → breaker → sewing room haunt → slam → death/retry E → hide/peek → McLean WO-4474 → death/retry F → 6:51 front desk → radio + keys → blackout → death/retry G → chase → MDP-1 → clock-out (early clock-out refused) → blackout + humming → Chris → walk out into the sunrise → end card).
 - `node clint-test.mjs`: focused test of the 10:58 opening (Clint on the dock, clock-in held, grumble, exit through the lot door, clock-in opens, 7/7 takes voiced). `SHOTS=1` writes `screenshots/clint-*.png`.
-- `node ending-test.mjs`: focused test of the 6:51 ending (desk state, turn-in, Merry Christmas, blackout threshold, no answer from Dee, flicker + song, fair-bot run, MDP-1, end card, checkpoint G retries). `SHOTS=1` writes `screenshots/ending-*.png`. `URL=` picks the server.
-- Lady DuBose's haunt is audio + atmosphere only: an original synthesized hummed lullaby (not any existing song/carol), a single short distant cry, cold, an empty bar, slamming doors. Nothing is shown. The same lullaby follows 173 during the 6:51 blackout.
+- `node ending-test.mjs`: focused test of the 6:51 ending (desk state, turn-in, Merry Christmas, blackout threshold, no answer from Dee, flicker + song, fair-bot run, MDP-1 is not the end, clock-out, full blackout + humming, Chris (look, 7/7 voiced lines), lot door, sunrise, end card, checkpoint G retries). `SHOTS=1` writes `screenshots/ending-*.png`. `URL=` picks the server.
+- `node voice-fallback-test.mjs`: every mp3 404s: radio lines squelch; Clint, Dee in person and Chris show subtitles only, with no radio hiss and no soft-lock.
+- Lady DuBose's haunt is audio + atmosphere only: an original synthesized hummed lullaby (not any existing song/carol), a single short distant cry, cold, an empty bar, slamming doors. Nothing is shown. The same lullaby follows 173 during the 6:51 blackout, and plays once more in the dark after you clock out.

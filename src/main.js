@@ -5,6 +5,7 @@ import { Sound } from './audio.js';
 import { Story } from './story.js';
 import { DEE_LINES } from './dee-lines.js';
 import { CLINT_LINES } from './clint-lines.js';
+import { CHRIS_LINES } from './chris-lines.js';
 
 const params = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
@@ -25,6 +26,12 @@ W.sound = sound;
 
 // ---------- lighting ----------
 const hemi = new THREE.HemisphereLight(0x8090a8, 0x201810, 0.5); scene.add(hemi);
+// 7 AM, the employee lot: a low warm sun from the east (+x) and a dawn haze, blended in by game.outdoor (0 inside .. 1 out in the lot; Story sets it)
+const sunLight = new THREE.DirectionalLight(0xffc49a, 0); sunLight.position.copy(W.anchors.lot).addScaledVector(W.sunDir, 60); sunLight.target.position.copy(W.anchors.lot); scene.add(sunLight); scene.add(sunLight.target);
+const NIGHT_FOG = new THREE.Color(0x040506), DAWN_FOG = new THREE.Color(0x8c8a98), NIGHT_SKY = new THREE.Color(0x020304), HEMI_SKY = new THREE.Color(0x8090a8), DAWN_HEMI = new THREE.Color(0xb8b4c8);
+function updateOutdoor() { const k = Math.max(0, Math.min(1, game.outdoor || 0));
+  scene.fog.color.copy(NIGHT_FOG).lerp(DAWN_FOG, k); scene.fog.density = 0.036 + (0.011 - 0.036) * k; scene.background.copy(NIGHT_SKY).lerp(DAWN_FOG, k);
+  hemi.intensity = (0.5 + k * 0.75) * (game.dark ? 0.28 : 1); hemi.color.copy(HEMI_SKY).lerp(DAWN_HEMI, k); sunLight.intensity = k * (game.sunGain ?? 2.0); }
 const LIGHT_GAIN = 3.2; const POOL = 10; const pool = [];
 for (let i = 0; i < POOL; i++) { const l = new THREE.PointLight(0xffffff, 0, 10, 2); scene.add(l); pool.push(l); }
 const flash = new THREE.SpotLight(0xfff2da, 0, 22, 0.52, 0.55, 1.6); flash.position.set(0.18, -0.12, 0); camera.add(flash); camera.add(flash.target); flash.target.position.set(0, -0.15, -1);
@@ -161,6 +168,7 @@ addEventListener('keydown', e => {
   if (game.state !== 'play') return;
   if (e.code === 'KeyE' && game.peeking && game.story.peekDoor) { const d = game.story.peekDoor; const dir = Math.sign(d.peekA) || d.swing; d.setOpen(true); d.target = dir * 1.75; return; } // throw it open the way it was cracked (away from you)
   if (e.code === 'KeyE' && hover && !(typeof hover.hold === 'function' ? hover.hold() : hover.hold) && !player.eyesClosed) hover.use();
+  if (e.code === 'KeyF' && game.flashDead) { sound.ctx && sound.burst({ f: 2500, q: 5, peak: 0.2, rel: 0.03 }); game.hud.toast('Click. Nothing. The flashlight\'s dead.', 2); return; }
   if (e.code === 'KeyF') { game.flashOn = !game.flashOn; sound.ctx && sound.burst({ f: 2500, q: 5, peak: 0.2, rel: 0.03 }); }
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
@@ -173,7 +181,7 @@ addEventListener('mousemove', e => { if (game.state !== 'play' || document.point
 canvas.addEventListener('click', () => { if (game.state === 'play' && document.pointerLockElement !== canvas) game.lockPointer(); });
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && game.state === 'play' && !params.has('nolock')) pause(true); });
 function pause(v) { if (v) { game.state = 'pause'; $('pause').classList.remove('hidden'); } else { $('pause').classList.add('hidden'); game.state = 'play'; game.lockPointer(); } }
-$('start').onclick = () => { sound.init(); sound.loadVoices(CLINT_LINES, 'audio/clint/'); sound.loadVoices(DEE_LINES); $('title').classList.add('hidden'); $('hud').classList.remove('hidden'); game.state = 'play'; game.lockPointer(); game.story.start(); };
+$('start').onclick = () => { sound.init(); sound.loadVoices(CLINT_LINES, 'audio/clint/'); sound.loadVoices(DEE_LINES); sound.loadVoices(CHRIS_LINES, 'audio/chris/'); $('title').classList.add('hidden'); $('hud').classList.remove('hidden'); game.state = 'play'; game.lockPointer(); game.story.start(); };
 $('resume').onclick = () => pause(false);
 $('restart').onclick = $('restart2').onclick = () => { $('pause').classList.add('hidden'); $('dead').classList.add('hidden'); game.story.restart(); game.state = 'play'; game.lockPointer(); };
 $('retry').onclick = () => { $('dead').classList.add('hidden'); game.story.retry(); game.state = 'play'; game.lockPointer(); };
@@ -197,7 +205,7 @@ function frame(dtOverride) {
   } else if (game.state === 'shots') { camera.position.set(player.pos.x, player.pos.y + EYE, player.pos.z); camera.rotation.set(player.pitch, player.yaw, 0); $('clock').textContent = fmtTime(game.time); } else if (game.state === 'title' || game.state === 'pause') { camera.rotation.set(player.pitch, player.yaw, 0); if (game.state === 'title') { camera.position.set(player.pos.x, player.pos.y + EYE, player.pos.z); } }
   game.story.always && game.story.always(dt);
   flash.intensity = game.flashOn ? 14 * (0.92 + Math.random() * 0.03) : 0; flashFill.intensity = game.flashOn ? 0.35 : 0;
-  updateLights(dt, t);
+  updateLights(dt, t); updateOutdoor();
   sound.updateListener(camera);
   post.uniforms.time.value = t; post.uniforms.glitch.value = Math.max(0, post.uniforms.glitch.value - dt * 1.5);
   game.shake = Math.max(0, game.shake - dt * 2);

@@ -248,14 +248,79 @@ export function buildWorld(scene, T) {
   W.doors.lotDoor = door(15.95, 10.3, 'z', 1.0, { swing: 1, mat: L(T.concrete, 1, 0x56606a), locked: true, name: 'lot', lockedMsg: 'Employee lot. You\'re on till seven.' });
   label(15.84, 2.45, 10.3, 0.9, 0.2, ['EXIT · EMPLOYEE LOT'], { w: 256, h: 56, size: 24, bg: '#7a1410', fg: '#f2efe6', bold: true }, -Math.PI / 2);
   deco(15.82, 1.0, 10.62, 15.86, 1.06, 10.74, M.darkSteel); // push bar
-  { // outside: a slab of the lot under a sodium light, then night
-    box(16, -0.1, 8.9, 20.0, 0, 11.7, L(T.concrete, 1, 0x3a3a3e), { solid: false });
-    const night = C(0x05070c, { emissive: 0x030409 });
-    box(19.9, 0, 8.9, 20.0, 4, 11.7, night); box(16, 0, 8.8, 20.0, 4, 8.9, night); box(16, 0, 11.7, 20.0, 4, 11.8, night); box(16, 3.2, 8.9, 20.0, 3.3, 11.7, night, { solid: false });
-    for (const [z, c] of [[9.4, 0xffa040], [11.1, 0xffb050]]) { const m = glowMat(c); deco(19.88, 1.6 + Math.random() * 0.6, z, 19.9, 1.7 + Math.random() * 0.6, z + 0.12, m); } // far lot poles
+  // ---- outside: the employee lot (east of the dock). At night it's sodium poles and dark; at 7 AM on Christmas it's the walk out into the sunrise.
+  //      All procedural: asphalt, striping, curbs, parked cars, light poles, the building's back wall, a treeline, a dawn sky (hidden until the end). ----
+  { const asph = (() => { const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d'); g.fillStyle = '#3b3c3f'; g.fillRect(0, 0, 256, 256);
+      const d = g.getImageData(0, 0, 256, 256); for (let i = 0; i < d.data.length; i += 4) { const n = (Math.random() - 0.5) * 46 + (Math.random() < 0.03 ? 40 : 0); d.data[i] += n; d.data[i + 1] += n; d.data[i + 2] += n * 1.05; } g.putImageData(d, 0, 0);
+      g.strokeStyle = 'rgba(15,15,16,0.7)'; g.lineWidth = 1.5; for (let k = 0; k < 3; k++) { g.beginPath(); let x = Math.random() * 256, y = 0; g.moveTo(x, y); while (y < 256) { x += (Math.random() - 0.5) * 30; y += 12 + Math.random() * 20; g.lineTo(x, y); } g.stroke(); }
+      for (let k = 0; k < 14; k++) { g.fillStyle = `rgba(20,20,22,${0.08 + Math.random() * 0.12})`; g.beginPath(); g.arc(Math.random() * 256, Math.random() * 256, 8 + Math.random() * 30, 0, 7); g.fill(); }
+      const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; return t; })();
+    const A = L(asph, 4); const lotX0 = 16, lotX1 = 50, lotZ0 = 0, lotZ1 = 36;
+    box(lotX0, -0.1, lotZ0, lotX1, 0, lotZ1, A, { solid: false }); box(-20, -0.12, 12, lotX0, -0.02, 60, A, { solid: false }); box(lotX0, -0.12, lotZ1, 90, -0.02, 70, L(T.hedge, 3, 0x4a5a3a), { solid: false }); box(lotX1, -0.12, -40, 180, -0.02, lotZ1, L(T.hedge, 3, 0x4a5a3a), { solid: false }); box(90, -0.12, lotZ1, 180, -0.02, 90, L(T.hedge, 3, 0x4a5a3a), { solid: false });
+    W.surfaces.push({ x0: lotX0, x1: lotX1, z0: lotZ0, z1: lotZ1, s: 'concrete' });
+    // the building behind you: McLean's back wall (brick, dark windows) and the dock's outside face, a roofline, a few vents
+    const brick = L(T.brick, 1.2, 0x9a8a80); box(lotX0, 0, -0.6, lotX1 + 6, 7.5, -0.05, brick); box(lotX0 - 0.2, 7.5, -0.8, lotX1 + 6, 7.8, 0.1, M.darkSteel, { solid: false });
+    for (let x = 19; x < lotX1 + 4; x += 3.4) { for (const y of [2.0, 5.0]) { deco(x - 0.6, y - 0.75, -0.06, x + 0.6, y + 0.75, -0.02, M.nightGlass); deco(x - 0.68, y - 0.83, -0.08, x + 0.68, y - 0.75, 0.0, M.trim); } }
+    box(15.9, 5.5, 0, 16.1, 6.1, 12, M.block, { solid: false }); deco(16.1, 5.9, 0, 16.3, 6.1, 12, M.darkSteel);
+    for (const x0 of [2, 9]) { deco(x0, 0, 12.02, x0 + 5, 4.0, 12.06, M.rollup); deco(x0 - 0.15, 0, 12.0, x0, 4.2, 12.1, M.yellow); deco(x0 + 5, 0, 12.0, x0 + 5.15, 4.2, 12.1, M.yellow); deco(x0 + 0.5, 0, 12.06, x0 + 1.0, 1.3, 12.5, M.black); deco(x0 + 4.0, 0, 12.06, x0 + 4.5, 1.3, 12.5, M.black); }
+    box(-0.2, 5.5, 0, 16.1, 5.6, 12.1, M.darkSteel, { solid: false });
+    deco(16.0, 2.35, 9.7, 16.05, 2.75, 10.9, M.darkSteel); label(16.07, 2.55, 10.3, 0.9, 0.2, ['EMPLOYEE ENTRANCE · BADGE REQUIRED'], { w: 384, h: 56, size: 20, bg: '#1d2a44', fg: '#e8e4d8', bold: true }, Math.PI / 2);
+    deco(16.05, 1.0, 10.95, 16.12, 1.25, 11.1, M.darkSteel); deco(16.12, 1.12, 10.98, 16.13, 1.2, 11.07, glowMat(0xd23a2a)); // badge reader
+    // curbs + a sidewalk along the building, then the stalls
+    box(lotX0, 0, 0, lotX1, 0.15, 2.2, L(T.concrete, 2, 0xa8a49a), { solid: false }); W.heights.push({ x0: lotX0, x1: lotX1, z0: 0, z1: 2.2, f: () => 0.15 });
+    box(lotX0, 0, 8.4, lotX0 + 3.4, 0.12, 12.2, L(T.concrete, 2, 0xa8a49a), { solid: false }); W.heights.push({ x0: lotX0, x1: lotX0 + 3.4, z0: 8.4, z1: 12.2, f: () => 0.12 });
+    const paint = new THREE.MeshLambertMaterial({ color: 0xd8d4c4 }); paint.userData.s = 1; const yel = new THREE.MeshLambertMaterial({ color: 0xc9a22a }); yel.userData.s = 1;
+    for (const zr of [[3.2, 8.2], [24, 29], [29.4, 34.4]]) for (let x = 21; x <= 47; x += 2.6) deco(x - 0.05, 0.002, zr[0], x + 0.05, 0.006, zr[1], paint);
+    for (let x = 22; x < 48; x += 3) deco(x, 0.002, 15.9, x + 1.5, 0.006, 16.1, yel); // drive-aisle dashes
+    for (let x = 21.65; x < 47; x += 2.6) solidDeco(x + 0.3, 0, 3.4, x + 1.95, 0.14, 3.65, L(T.concrete, 1, 0xb0aca2)); // wheel stops
+    // parked cars: day shift trickling in, a couple frosted over from the night
+    const car = (x, z, ry, col, frost) => { const G = new THREE.Group(); G.position.set(x, 0, z); G.rotation.y = ry; scene.add(G);
+      const body = C(col), dark = C(0x0b0c0e), glass = new THREE.MeshLambertMaterial({ color: frost ? 0xb9c6d2 : 0x1a2028, emissive: frost ? 0x20262c : 0x000000 }); glass.userData.s = 1;
+      const B = (a, b, c, d, e, f, m) => box(a, b, c, d, e, f, m, { parent: G, solid: false, occ: false });
+      B(-0.88, 0.32, -2.2, 0.88, 0.95, 2.2, body); B(-0.8, 0.95, -1.15, 0.8, 1.45, 0.95, glass); B(-0.82, 1.43, -1.0, 0.82, 1.5, 0.85, body);
+      B(-0.9, 0.3, -2.25, 0.9, 0.45, -2.1, dark); B(-0.9, 0.3, 2.1, 0.9, 0.45, 2.25, dark);
+      for (const sx of [-0.62, 0.62]) { B(sx - 0.17, 0.62, 2.19, sx + 0.17, 0.78, 2.22, glowMat(0x2a2620)); B(sx - 0.15, 0.62, -2.22, sx + 0.15, 0.76, -2.19, glowMat(0x3a0806)); }
+      for (const [wx, wz] of [[-0.82, -1.35], [0.82, -1.35], [-0.82, 1.35], [0.82, 1.35]]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.33, 0.22, 14), dark); w.rotation.z = Math.PI / 2; w.position.set(wx, 0.33, wz); G.add(w); }
+      const c0 = Math.cos(ry), s0 = Math.sin(ry); const hx = Math.abs(c0) * 0.9 + Math.abs(s0) * 2.2, hz = Math.abs(s0) * 0.9 + Math.abs(c0) * 2.2; W.colliders.push({ x0: x - hx, x1: x + hx, z0: z - hz, z1: z + hz, y0: 0, y1: 1.5 }); return G; };
+    car(22.3, 5.8, 0, 0x7a1e1a, true); car(27.5, 5.7, 0, 0x2a3a52, false); car(30.1, 5.8, 0.03, 0xb8b8b4, true); car(38.0, 5.8, 0, 0x2c2c2e, false);
+    car(23.6, 26.6, Math.PI, 0x4a5a3a, true); car(34.0, 26.7, Math.PI, 0x8a8a90, true); car(41.8, 31.9, Math.PI + 0.04, 0x6a5040, false);
+    W.anchors.chrisCar = new THREE.Vector3(43.3, 0, 5.8); car(43.3, 5.8, 0, 0x1e2a3a, false); // Chris's: no frost, still ticking
+    // light poles (photocell sodium heads); they click off as the sun comes up
+    W.lotLights = [];
+    for (const [x, z] of [[19.6, 13.6], [32.0, 15.6], [44.5, 15.6], [32.0, 33.0]]) { cyl(x, 0, z, 0.1, 0.5, L(T.concrete, 1, 0x9a968c), { solid: true, r2: 0.14 }); cyl(x, 0.5, z, 0.06, 7.2, M.darkSteel);
+      deco(x - 0.04, 7.55, z - 0.04, x + 0.9, 7.65, z + 0.04, M.darkSteel); const head = glowMat(0xffa654); deco(x + 0.55, 7.42, z - 0.18, x + 1.15, 7.56, z + 0.18, head);
+      const v = light(x + 0.85, 7.2, z, 0xffa250, 5.5, { dist: 16, group: 'lot' }); v.fixtures.push(head); W.lotLights.push(v); }
+    // the lot's edges: a low hedge, a chain-link fence, a dumpster corral, then trees; a utility line
+    deco(lotX1, 0, 0, lotX1 + 0.8, 0.9, lotZ1, M.hedge); deco(lotX0 + 4, 0, lotZ1, lotX1, 0.9, lotZ1 + 0.8, M.hedge);
+    W.colliders.push({ x0: lotX1, x1: lotX1 + 1, z0: -1, z1: lotZ1 + 1, y0: 0, y1: 3 }, { x0: lotX0 - 1, x1: lotX1 + 1, z0: lotZ1, z1: lotZ1 + 1, y0: 0, y1: 3 }, { x0: -6, x1: lotX0, z0: 12.1, z1: lotZ1 + 1, y0: 0, y1: 3, });
+    const fence = new THREE.MeshLambertMaterial({ color: 0x8a9096, transparent: true, opacity: 0.35 }); fence.userData.s = 1; plane(lotX1 + 1.2, 1.0, lotZ1 / 2, lotZ1, 2.0, fence, Math.PI / 2);
+    for (let z = 0; z <= lotZ1; z += 3) cyl(lotX1 + 1.2, 0, z, 0.03, 2.1, M.steel);
+    solidDeco(17.2, 0, 31.5, 21.4, 1.8, 31.7, L(T.pine, 0.9, 0x6a5a48)); solidDeco(17.2, 0, 34.0, 21.4, 1.8, 34.2, L(T.pine, 0.9, 0x6a5a48)); solidDeco(17.0, 0, 31.5, 17.2, 1.8, 34.2, L(T.pine, 0.9, 0x6a5a48));
+    solidDeco(18.0, 0, 32.1, 20.6, 1.4, 33.6, C(0x2a4a5a)); deco(17.9, 1.4, 32.0, 20.7, 1.5, 33.7, C(0x1a1a1c));
+    const trunk = C(0x2a2018), pine = C(0x1c2e22), oak = C(0x3a3428);
+    for (let i = 0; i < 46; i++) { const a = i / 46; let x, z; if (i % 3 === 0) { x = 95 + Math.random() * 35; z = -30 + Math.random() * 90; } else { x = lotX0 - 8 + Math.random() * (lotX1 - lotX0 + 24); z = lotZ1 + 3 + Math.random() * 16; }
+      const h = 7 + Math.random() * 9; cyl(x, 0, z, 0.22, h * 0.45, trunk); if (Math.random() < 0.6) { const t = new THREE.Mesh(new THREE.ConeGeometry(1.6 + Math.random() * 1.3, h * 0.8, 8), pine); t.position.set(x, h * 0.55, z); scene.add(t); }
+      else { for (let k = 0; k < 6; k++) { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.07, 3 + Math.random() * 2, 4), oak); b.position.set(x + (Math.random() - 0.5) * 1.6, h * 0.55 + Math.random() * h * 0.3, z + (Math.random() - 0.5) * 1.6); b.rotation.set((Math.random() - 0.5) * 1.2, 0, (Math.random() - 0.5) * 1.2); scene.add(b); } } } // bare winter oaks
+    for (let x = 18; x < 60; x += 14) { cyl(x, 0, lotZ1 + 2.2, 0.12, 9, C(0x3a2c20)); deco(x - 1.2, 8.4, lotZ1 + 2.15, x + 1.2, 8.5, lotZ1 + 2.25, C(0x3a2c20)); }
+    { const wire = new THREE.MeshBasicMaterial({ color: 0x15161a }); for (const y of [8.2, 8.45]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 42, 3), wire); w.rotation.z = Math.PI / 2; w.position.set(39, y, lotZ1 + 2.2); scene.add(w); } }
+    // sodium light just over the lot door (on the dock circuit)
     light(17.3, 3.0, 10.3, 0xffa860, 2.6, { dist: 6, group: 'dock' }); const sod = glowMat(0xffb060); deco(17.1, 3.05, 10.15, 17.5, 3.15, 10.45, sod); W.vlights[W.vlights.length - 1].fixtures.push(sod);
     W.anchors.lot = new THREE.Vector3(17.6, 0, 10.3);
-    W.colliders.push({ x0: 16.05, x1: 16.5, z0: 9.75, z1: 10.85, y0: 0, y1: 2.3 }); } // you never follow him out (the door is his, not yours)
+    // 7 AM: cold gray daylight spilling in when the lot door opens (off until then)
+    W.dawnSpill = light(17.6, 2.2, 10.3, 0xa8b4c8, 2.2, { dist: 7, on: false, group: 'dawn' });
+    W.lotBlock = { x0: 16.05, x1: 16.5, z0: 9.75, z1: 10.85, y0: 0, y1: 2.3 }; W.colliders.push(W.lotBlock); // you never follow Clint out (the door is his, not yours) — lifted at 7 AM
+    // ---- the dawn sky (hidden until the lot door opens for you): deep blue overhead, rose and orange low in the east (+x), a sun disc, a few lit clouds ----
+    const D = W.dawn = new THREE.Group(); D.visible = false; scene.add(D); const C0 = new THREE.Vector3(33, 0, 18);
+    { const R = 140, g = new THREE.SphereGeometry(R, 48, 24); const col = []; const p = g.attributes.position; const top = new THREE.Color(0x1d2c52), mid = new THREE.Color(0x5d6f9a), rose = new THREE.Color(0xd98a7a), amber = new THREE.Color(0xffb35a), low = new THREE.Color(0x8a6a78);
+      for (let i = 0; i < p.count; i++) { const x = p.getX(i) / R, y = p.getY(i) / R, z = p.getZ(i) / R; const east = Math.max(0, x * 0.85 + 0.15 * (1 - Math.abs(z))); const e = Math.max(0, y);
+        const c = top.clone().lerp(mid, Math.pow(1 - e, 2.2)); c.lerp(rose, Math.pow(1 - e, 6) * (0.35 + east * 0.65)); c.lerp(amber, Math.pow(1 - e, 14) * Math.pow(east, 2.2)); if (y < 0) c.copy(low).lerp(new THREE.Color(0x2a2a30), Math.min(1, -y * 4)); col.push(c.r, c.g, c.b); }
+      g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); const sky = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false })); sky.position.copy(C0); D.add(sky); }
+    { const cv = document.createElement('canvas'); cv.width = cv.height = 128; const x = cv.getContext('2d'); const gr = x.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,250,225,1)'); gr.addColorStop(0.16, 'rgba(255,226,160,1)'); gr.addColorStop(0.3, 'rgba(255,170,90,0.55)'); gr.addColorStop(1, 'rgba(255,120,60,0)'); x.fillStyle = gr; x.fillRect(0, 0, 128, 128);
+      const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; const sun = W.sun = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, fog: false, depthWrite: false, transparent: true })); sun.scale.set(36, 36, 1); sun.position.set(C0.x + 125, 3, C0.z + 6); sun.renderOrder = -1; D.add(sun); }
+    { const cm = new THREE.MeshBasicMaterial({ color: 0xe9a38a, fog: false, transparent: true, opacity: 0.85, depthWrite: false }); const cd = new THREE.MeshBasicMaterial({ color: 0x8a7290, fog: false, transparent: true, opacity: 0.7, depthWrite: false });
+      for (let i = 0; i < 16; i++) { const a = (Math.random() - 0.5) * 2.2, e = 0.07 + Math.random() * 0.28; const r = 128; const m = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 6), i % 3 ? cm : cd);
+        m.position.set(C0.x + Math.cos(a) * Math.cos(e) * r, Math.sin(e) * r, C0.z + Math.sin(a) * Math.cos(e) * r); m.scale.set(9 + Math.random() * 16, 1.2 + Math.random() * 1.5, 4 + Math.random() * 6); m.lookAt(C0.x, m.position.y, C0.z); m.renderOrder = -1; D.add(m); } }
+    W.sunDir = new THREE.Vector3(1, 0.06, 0.05).normalize(); }
   // ---- Clint: chief engineer, waiting at the time clock to go home. Stylized, simple shapes, no likeness:
   //      heavyset, bald, blue short-sleeve button-down work shirt, black pants, cigarette. Faces +z locally. ----
   { const G = W.clint = new THREE.Group(); scene.add(G);
@@ -303,6 +368,72 @@ export function buildWorld(scene, T) {
     W.placeClint = (x, z, ry) => { G.position.set(x, 0, z); G.rotation.y = ry; G.updateMatrixWorld(true); W.clintHead.getWorldPosition(W.anchors.clintHead); W.anchors.clintHead.y += 0.08;
       Object.assign(W.clintCol, { x0: x - 0.34, x1: x + 0.34, z0: z - 0.34, z1: z + 0.34 }); };
     W.placeClint(1.2, 4.75, 1.0); }
+
+  // ---- Chris: engineering supervisor, day shift, in at 7 AM Christmas morning. Stylized, simple shapes, no likeness:
+  //      tall and lean, short black hair, an open knit cardigan (oatmeal, ribbed, elbow patches) over a gray work shirt with a "Chris" patch,
+  //      charcoal work pants, boots, a flashlight. Deep-set eyes under a heavy brow, a shadow of stubble. Faces +z locally. ----
+  { const G = W.chris = new THREE.Group(); G.visible = false; scene.add(G);
+    const knitTex = (() => { const c = document.createElement('canvas'); c.width = 64; c.height = 64; const x = c.getContext('2d'); x.fillStyle = '#b39a74'; x.fillRect(0, 0, 64, 64);
+      for (let i = 0; i < 64; i += 4) { x.fillStyle = 'rgba(40,30,18,0.32)'; x.fillRect(i, 0, 1.4, 64); x.fillStyle = 'rgba(255,240,215,0.12)'; x.fillRect(i + 2, 0, 1, 64); }
+      for (let j = 0; j < 64; j += 3) { x.fillStyle = 'rgba(30,22,12,0.10)'; x.fillRect(0, j, 64, 1); }
+      const d = x.getImageData(0, 0, 64, 64); for (let i = 0; i < d.data.length; i += 4) { const n = (Math.random() - 0.5) * 18; d.data[i] += n; d.data[i + 1] += n; d.data[i + 2] += n; } x.putImageData(d, 0, 0);
+      const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(5, 3); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+    const knit = new THREE.MeshLambertMaterial({ map: knitTex, side: THREE.DoubleSide }), rib = C(0x8c7556), patchM = C(0x4a3424);
+    const skin = C(0xc4977a), skinD = C(0xa87c62), hair = C(0x1c1917), shirt = C(0xa9b0b6), shirtD = C(0x8a9299), pants = C(0x34363a), boot = C(0x3a2618), belt = C(0x1a1410), sock = C(0x0a0a0c);
+    const B = (x0, y0, z0, x1, y1, z1, m, p = G) => box(x0, y0, z0, x1, y1, z1, m, { parent: p, solid: false, occ: false });
+    const sph = (r, m, x, y, z, sx = 1, sy = 1, sz = 1, p = G) => { const o = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), m); o.position.set(x, y, z); o.scale.set(sx, sy, sz); p.add(o); return o; };
+    const limb = (len, r0, r1, m, p, y0 = 0) => { const c = new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, len, 10), m); c.position.y = y0 - len / 2; p.add(c); return c; };
+    const openCyl = (rt, rb, h, gap, m, y) => { const c = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, 20, 1, true, gap / 2, Math.PI * 2 - gap), m); c.scale.z = 0.74; c.position.y = y; G.add(c); return c; };
+    // legs: long (hip pivots at 1.02 for the walk)
+    W.chrisLegs = [];
+    for (const sx of [-1, 1]) { const hip = new THREE.Group(); hip.position.set(sx * 0.105, 1.02, 0); G.add(hip); limb(0.96, 0.085, 0.07, pants, hip);
+      B(-0.06, -1.02, -0.08, 0.06, -0.93, 0.2, boot, hip); B(-0.055, -0.95, -0.06, 0.055, -0.9, 0.06, sock, hip); W.chrisLegs.push(hip); }
+    // the work shirt underneath (tucked in, belt), visible down the front and at the collar
+    const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.165, 0.66, 16), shirt); sh.scale.z = 0.7; sh.position.y = 1.36; G.add(sh);
+    const bl = new THREE.Mesh(new THREE.CylinderGeometry(0.168, 0.168, 0.05, 16), belt); bl.scale.z = 0.72; bl.position.y = 1.03; G.add(bl); B(-0.03, 1.01, 0.115, 0.03, 1.05, 0.125, C(0x8a8a80));
+    B(-0.009, 1.08, 0.118, 0.009, 1.62, 0.126, shirtD); for (let i = 0; i < 4; i++) sph(0.007, C(0xe8e8e0), 0, 1.2 + i * 0.1, 0.127);
+    { const cv = document.createElement('canvas'); cv.width = 128; cv.height = 48; const x = cv.getContext('2d'); x.fillStyle = '#f2efe6'; x.beginPath(); x.ellipse(64, 24, 62, 22, 0, 0, Math.PI * 2); x.fill();
+      x.strokeStyle = '#1c3a7a'; x.lineWidth = 4; x.stroke(); x.fillStyle = '#1c3a7a'; x.font = 'italic bold 26px Georgia, serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('Chris', 64, 25);
+      const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; const pm = W.chrisPatch = new THREE.Mesh(new THREE.PlaneGeometry(0.085, 0.034), new THREE.MeshLambertMaterial({ map: t, transparent: true })); pm.position.set(0.05, 1.5, 0.124); pm.rotation.y = 0.2; G.add(pm); }
+    for (const sx of [-1, 1]) { const c = B(-0.05, -0.02, -0.01, 0.05, 0.02, 0.01, shirt); c.position.set(sx * 0.045, 1.675, 0.115); c.rotation.z = sx * 0.6; c.rotation.x = -0.35; } // collar points, over the cardigan's neckline
+    // the cardigan: open down the front (wide V up top, narrower below), ribbed hem + button bands, patch pockets, long sleeves with elbow patches
+    W.chrisCardigan = [openCyl(0.205, 0.198, 0.34, 1.05, knit, 1.5), openCyl(0.198, 0.19, 0.4, 0.42, knit, 1.13)];
+    openCyl(0.193, 0.193, 0.06, 0.42, rib, 0.93);
+    for (const sx of [-1, 1]) { for (const [y0, y1, a] of [[1.32, 1.66, 0.52], [0.9, 1.32, 0.21]]) { const xx = Math.sin(a) * 0.2 * sx, zz = Math.cos(a) * 0.2 * 0.74; B(xx - 0.016, y0, zz - 0.012, xx + 0.016, y1, zz + 0.012, rib); }
+      if (sx < 0) for (let i = 0; i < 5; i++) { const a = i < 3 ? 0.21 : 0.52; sph(0.009, C(0x3a2a1a), -Math.sin(a) * 0.2, 0.99 + i * 0.12, Math.cos(a) * 0.148 + 0.014); }
+      const pk = B(-0.055, -0.06, -0.008, 0.055, 0.06, 0.008, knit); pk.position.set(sx * 0.12, 1.06, 0.135); pk.rotation.y = sx * 0.55; }
+    for (const sx of [-1, 1]) sph(0.07, knit, sx * 0.205, 1.635, 0, 1.05, 0.62, 0.95); // shoulders
+    const arm = (sx) => { const S = new THREE.Group(); S.position.set(sx * 0.235, 1.63, 0); G.add(S); limb(0.33, 0.066, 0.058, knit, S);
+      const E = new THREE.Group(); E.position.y = -0.33; S.add(E); limb(0.29, 0.056, 0.048, knit, E); limb(0.05, 0.05, 0.05, rib, E, -0.27);
+      const ep = sph(0.04, patchM, 0, -0.02, -0.042, 1, 1.4, 0.45, E); // suede elbow patch
+      const hand = sph(0.042, skin, 0, -0.35, 0.01, 0.85, 1.2, 0.8, E); return { S, E, hand }; };
+    W.chrisArmL = arm(-1); W.chrisArmR = arm(1);
+    // flashlight in his right hand (beam: a vlight driven by Story + a faint cone)
+    { const fl = W.chrisFlash = new THREE.Group(); fl.position.set(0, -0.36, 0.02); fl.rotation.x = Math.PI; W.chrisArmR.E.add(fl);
+      const bd = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.016, 0.2, 8), C(0x141416)); fl.add(bd); const hd = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.02, 0.05, 10), C(0x1c1c20)); hd.position.y = 0.12; fl.add(hd);
+      const lens = W.chrisLens = new THREE.Mesh(new THREE.CircleGeometry(0.025, 10), glowMat(0xfff2c8)); lens.position.y = 0.146; lens.rotation.x = -Math.PI / 2; fl.add(lens);
+      const cone = W.chrisBeam = new THREE.Mesh(new THREE.ConeGeometry(0.55, 3.2, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0xfff0c8, transparent: true, opacity: 0.07, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+      cone.position.y = 0.146 + 1.6; cone.rotation.x = Math.PI; fl.add(cone); }
+    // neck + head: long face, short black hair (cropped, sideburns), heavy brow over deep-set eyes, a shadow of stubble
+    limb(0.11, 0.055, 0.062, skin, G, 1.78);
+    const H = W.chrisHead = new THREE.Group(); H.position.set(0, 1.77, 0.01); G.add(H);
+    sph(0.105, skin, 0, 0.11, 0, 0.9, 1.16, 0.98, H);
+    const stub = new THREE.Mesh(new THREE.SphereGeometry(0.107, 14, 10, 0, Math.PI * 2, Math.PI * 0.58, Math.PI * 0.3), new THREE.MeshLambertMaterial({ color: 0x3a2e2a, transparent: true, opacity: 0.32 })); stub.scale.set(0.91, 1.16, 0.99); stub.position.y = 0.11; H.add(stub);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.105, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.27), hair); cap.scale.set(0.9 * 1.09, 1.16 * 1.13, 0.98 * 1.08); cap.position.set(0, 0.104, -0.004); H.add(cap); // cropped top, hairline well above the brows
+    const back = new THREE.Mesh(new THREE.SphereGeometry(0.108, 16, 10, Math.PI * 0.9, Math.PI * 1.2, Math.PI * 0.22, Math.PI * 0.43), hair); back.scale.set(0.93, 1.1, 1.0); back.position.y = 0.115; H.add(back); // back + sides, short
+    for (const sx of [-1, 1]) { B(-0.008, -0.03, -0.014, 0.008, 0.03, 0.014, hair, H).position.set(sx * 0.093, 0.105, 0.03); // sideburns
+      sph(0.024, skin, sx * 0.098, 0.1, -0.004, 0.5, 1, 0.85, H); // ears
+      const s = sph(0.022, C(0x8a5e48), sx * 0.036, 0.135, 0.083, 1.2, 0.7, 0.6, H); // deep-set eye socket shadow
+      sph(0.011, C(0x0c0a0a), sx * 0.036, 0.134, 0.093, 1, 0.9, 0.6, H);
+      const br = B(-0.03, -0.007, -0.01, 0.03, 0.007, 0.01, hair, H); br.position.set(sx * 0.038, 0.155, 0.097); br.rotation.z = sx * -0.12; } // heavy, level brows
+    B(-0.06, 0.145, 0.08, 0.06, 0.161, 0.1, skinD, H); // brow ridge
+    sph(0.02, skinD, 0, 0.105, 0.102, 0.8, 1.4, 1.0, H); B(-0.026, 0.055, 0.094, 0.026, 0.061, 0.1, C(0x6a4a3e), H); // nose, mouth (flat, tired)
+    W.anchors.chrisHead = new THREE.Vector3(); W.chrisPick = new THREE.Mesh(new THREE.BoxGeometry(0.6, 2.0, 0.5), new THREE.MeshBasicMaterial({ visible: false })); W.chrisPick.position.y = 1.0; G.add(W.chrisPick);
+    W.chrisCol = { x0: 0, x1: 0, z0: 0, z1: 0, y0: 0, y1: 2.0, disabled: true }; W.colliders.push(W.chrisCol);
+    W.chrisLight = light(0, -50, 0, 0xfff0d0, 3.2, { dist: 7, on: false, group: 'chris' }); W.chrisLight.fixtures.push(W.chrisLens.material);
+    W.placeChris = (x, z, ry) => { G.position.set(x, G.position.y, z); G.rotation.y = ry; G.updateMatrixWorld(true); W.chrisHead.getWorldPosition(W.anchors.chrisHead); W.anchors.chrisHead.y += 0.1;
+      Object.assign(W.chrisCol, { x0: x - 0.3, x1: x + 0.3, z0: z - 0.3, z1: z + 0.3 }); };
+    W.placeChris(18.6, 10.3, -Math.PI / 2); }
 
   // =====================================================================
   // MAINTENANCE / ENGINEERING OFFICE  x[0,6] z[-5,0] (just inside the dock door)
@@ -792,7 +923,7 @@ export function buildWorld(scene, T) {
   W.regions = [
     { name: 'closet', x0: 58, x1: 60, z0: -46, z1: -43 }, { name: 'sewing', x0: 58, x1: 66, z0: -50, z1: -43 }, { name: 'bar', x0: 50, x1: 58, z0: -50, z1: -43 },
     { name: 'backhall', x0: 54, x1: 65.95, z0: -43, z1: -40 }, { name: 'bath117', x0: 24.95, x1: 26.6, z0: -35.6, z1: -33 }, { name: 'room117', x0: 21.8, x1: 26.6, z0: -38.4, z1: -33.02 },
-    { name: 'dock', x0: 0, x1: 16, z0: 0, z1: 12 }, { name: 'office', x0: 0, x1: 6, z0: -5, z1: 0 }, { name: 'corridor', x0: 8, x1: 10.4, z0: -30, z1: 0 },
+    { name: 'dock', x0: 0, x1: 16, z0: 0, z1: 12 }, { name: 'lot', x0: 16.06, x1: 52, z0: -1, z1: 38 }, { name: 'office', x0: 0, x1: 6, z0: -5, z1: 0 }, { name: 'corridor', x0: 8, x1: 10.4, z0: -30, z1: 0 },
     { name: 'stairB', x0: 10.4, x1: 14, z0: -20, z1: -10 }, { name: 'lobby', x0: -6, x1: 7.5, z0: -29.98, z1: -21 }, { name: 'mclean', x0: -6, x1: 34, z0: -33, z1: -30 }, { name: 'pantry', x0: 14, x1: 18, z0: -30, z1: -25 },
     { name: 'terrace', x0: 34, x1: 48, z0: -38, z1: -25 }, { name: 'duboseHall', x0: 48, x1: 66, z0: -33, z1: -30 }, { name: 'library', x0: 50, x1: 62, z0: -40, z1: -33 },
     { name: 'dining', x0: 50, x1: 62, z0: -30, z1: -22 }, { name: 'butler', x0: 62, x1: 66, z0: -30, z1: -22 }, { name: 'foyer', x0: 66, x1: 78, z0: -42, z1: -22 }, { name: 'suite', x0: 66, x1: 78, z0: -50, z1: -42 },

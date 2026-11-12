@@ -221,4 +221,18 @@ export class Sound {
     const o = C.createOscillator(); o.type = 'triangle'; o.frequency.value = 96; const og = C.createGain(); og.gain.value = 0.2; o.connect(og); og.connect(g); o.start();
     g.gain.setTargetAtTime(vol, this.t, 0.6); return { set: v => g.gain.setTargetAtTime(v, this.t, 0.3) };
   }
+  // ---- 7 AM, the employee lot: original synthesized morning (a few birds in the bare trees, a distant road), nothing sampled ----
+  morning(vol = 0.5) {
+    const C = this.ctx; const out = C.createGain(); out.gain.value = 0; out.connect(this.master);
+    const road = this.noiseSrc(this.brown); const rl = C.createBiquadFilter(); rl.type = 'lowpass'; rl.frequency.value = 420; const rg = C.createGain(); rg.gain.value = 0.05; road.connect(rl); rl.connect(rg); rg.connect(out); road.start();
+    const L = { on: true };
+    const chirp = () => { if (!L.on) return; const t = this.t + 0.02; const f = 2600 + Math.random() * 2200; const n = 1 + Math.floor(Math.random() * 4); const pan = C.createStereoPanner ? C.createStereoPanner() : null; const dest = pan || out; if (pan) { pan.pan.value = Math.random() * 2 - 1; pan.connect(out); }
+      for (let i = 0; i < n; i++) this.tone({ f, f2: f * (0.72 + Math.random() * 0.4), peak: 0.03 + Math.random() * 0.03, a: 0.004, hold: 0.02, rel: 0.06 + Math.random() * 0.05, dest, t0: t + i * (0.11 + Math.random() * 0.05) });
+      L.timer = setTimeout(chirp, 500 + Math.random() * 2300); };
+    out.gain.setTargetAtTime(vol, this.t, 1.2); chirp();
+    L.set = v => out.gain.setTargetAtTime(v, this.t, 0.6);
+    L.stop = () => { if (!L.on) return; L.on = false; clearTimeout(L.timer); out.gain.setTargetAtTime(0, this.t, 0.3); try { road.stop(this.t + 2.5); } catch (e) {} };
+    return L;
+  }
+  footstep(pos, vol = 1) { const p = this.panner(pos, 2, 1.2); this.burst({ f: 1500 * (0.85 + Math.random() * 0.3), q: 1.1, peak: 0.14 * vol, rel: 0.05, dest: p }); this.tone({ f: 85, f2: 48, peak: 0.07 * vol, hold: 0, rel: 0.08, dest: p }); }
 }

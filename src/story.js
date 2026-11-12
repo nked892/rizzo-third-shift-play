@@ -2,17 +2,21 @@
 // back to McLean, then the DuBose sewing room (Lady DuBose's haunt), one more McLean ticket while 173 hunts.
 // 6:51 AM: hand the radio and keys over to Dee at the front desk; the second you leave the lobby the building goes dark, and you
 // run for the shop and the McLean main (MDP-1) with no radio and nobody to call.
+// The main closes, the lights come back. Clock out at the dock: the second the badge clears, the power drops again and the humming is back.
+// Then Chris, the day-shift engineering supervisor, comes in through the lot door with a flashlight, sends you home, and you walk out into the sunrise.
 import * as THREE from 'three';
 import { makeStatue } from './statue.js';
 
 const DEE = 'DEE (NIGHT AUDIT)';
 const ME = 'YOU';
 const CLINT = 'CLINT'; // chief engineer, in person on the dock at 10:58 PM (positional, never radio)
+const CHRIS = 'CHRIS'; // engineering supervisor, day shift: in person on the dock at 7 AM (positional, never radio)
 const DEE_LIVE = 'DEE'; // in person at the front desk (not radio-processed, positional from her chair)
 const DESK_SPAWN = { x: 1.5, z: -25.6, yaw: Math.PI, pitch: -0.1 }; // guest side of the front desk, facing Dee
 const CHASE_START = { x: 1.5, z: -30.85, yaw: -Math.PI / 2 }; // checkpoint G: McLean hall just outside the lobby doors, facing east
 const CHASE_GROUPS = ['lobby', 'mclean', 'pantry', 'corr', 'stairB', 'dock', 'office', 'r117'];
 const LURKS_G = [[-4.5, -31.5], [5.5, -31.5], [16, -27.2], [20, -31.5], [9.2, -24], [9.2, -16], [12.6, -12], [14, 8.5], [5.5, 9.5], [12.5, 3]];
+const MDP_SPOT = { x: 4.7, z: -3.65, yaw: -Math.PI / 2 }; // checkpoint H: in the shop at MDP-1, main closed
 const SHOP_WAKE = { x: 2.55, z: -2.85, yaw: 0.615, pitch: -0.2 }; // maintenance office, beside the desk chair, facing the desk
 const CELL = 0.25;
 const DY_BAR = 0.34; // DuBose floor height (matches world.js DY)
@@ -24,8 +28,8 @@ export class Story {
   constructor(g) {
     this.g = g; const W = this.W = g.W;
     this.f = { clint: 0, clocked: false, radio: false, wo1: 0, wo2: 0, ballast: false, key: false, phase: 'clockin', teased: false, suiteT: 0, power: true, breaker: false, ended: false, thermo: false, rad: false, cried: false, ptac: 0,
-      radioIn: false, keysIn: false, mainPower: true, mdp: 0 };
-    this.tickets = []; this.queue = []; this.subT = 0; this.cp = null; this.timers = []; this.cold = 0; this.puffs = []; this.puffT = 0; this.rock = { amp: 0, t: 0 }; this.peekDoor = null; this.voiceStats = { voiced: 0, fallback: 0, liveVoiced: 0, liveFallback: 0, radioAfterTurnIn: 0, clintVoiced: 0, clintFallback: 0 }; this.smoke = []; this.smokeT = 0; this.cl = null; this.ch = null;
+      radioIn: false, keysIn: false, mainPower: true, mdp: 0, out: false };
+    this.tickets = []; this.queue = []; this.subT = 0; this.cp = null; this.timers = []; this.cold = 0; this.puffs = []; this.puffT = 0; this.rock = { amp: 0, t: 0 }; this.peekDoor = null; this.voiceStats = { voiced: 0, fallback: 0, liveVoiced: 0, liveFallback: 0, radioAfterTurnIn: 0, clintVoiced: 0, clintFallback: 0, chrisVoiced: 0, chrisFallback: 0 }; this.smoke = []; this.smokeT = 0; this.cl = null; this.ch = null; this.cr = null; this.sunT = 0; this.lookT = 0;
     // statue
     this.statue = makeStatue(g.T); this.statue.visible = false; this.statue.position.set(0, -50, 0); g.scene.add(this.statue);
     this.S = { active: false, hunting: false, seen: false, moved: false, bashT: 0, bashTick: 0, seenEver: false };
@@ -44,6 +48,11 @@ export class Story {
     add({ mesh: W.timeclockMesh, range: 2.2, hold: 0.7, enabled: () => !f.clocked && f.clint >= 2, prompt: () => 'Clock in — swipe badge',
       use: () => { f.clocked = true; g.sound.punch(); g.hud.toast('IN  ' + this.clockStr() + '   ·   ENGINEERING / 3RD SHIFT', 3.5);
         this.say([[ME, 'Clocked in. Radio\'s on the charger in the shop.', 2.6]]); f.phase = 'radio'; this.obj('Grab your radio — maintenance office, just inside the dock'); } });
+    // clock-out: only after the main is back (7 AM). Before that the time clock just reminds you you're on till seven.
+    add({ mesh: W.timeclockMesh, range: 2.2, enabled: () => f.clocked && f.phase !== 'clockout' && !f.out, prompt: () => 'Time clock', use: () => g.hud.toast('You\'re on till seven. Clock out when the shift\'s done.', 2.5) });
+    add({ mesh: W.timeclockMesh, range: 2.2, hold: 0.7, enabled: () => f.phase === 'clockout', prompt: () => 'Clock out — swipe badge', use: () => this.punchOut() });
+    add({ mesh: W.timeclockMesh, range: 2.2, enabled: () => f.out, prompt: () => 'Time clock', use: () => g.hud.toast('OUT ' + (this._outTime || '7:00 AM') + '. You\'re off.', 2.5) });
+    add({ mesh: W.chrisPick, range: 2.6, enabled: () => W.chris.visible && ['leave', 'sunrise'].includes(f.phase), prompt: () => 'Chris — engineering supervisor', use: () => g.hud.toast('He waves you toward the door. "Go home."', 2.5) });
     add({ mesh: W.radioPick, range: 2.2, enabled: () => !f.radio && !f.radioIn, prompt: () => f.clocked ? 'Take radio + flashlight' : 'Radio (clock in first)',
       use: () => { if (!f.clocked) { g.hud.toast('Clock in first. Payroll will not forgive you.'); return; }
         f.radio = true; W.radioMesh.visible = false; W.radioLed.visible = false; g.sound.pickup(); g.flashOn = true; g.hud.toast('Radio + flashlight.   [F] flashlight', 3);
@@ -96,6 +105,7 @@ export class Story {
       use: () => { if (f.mdp === 0) { f.mdp = 1; g.sound.ctx && g.sound.clunk(); g.hud.toast('Springs charged. CHARGED flag\'s showing. Now CLOSE.', 2.5); } else this.mainReset(); } });
     add({ mesh: W.mdpMesh, range: 2.4, enabled: () => f.phase !== 'chase' || f.mdp >= 2, prompt: () => 'MDP-1 · McLean main', use: () => g.hud.toast(f.mdp >= 2 ? 'Main\'s closed. Normal power.' : 'McLean main. Closed. Leave it alone.', 2.5) });
     W.doors.lobbyL.onLocked = W.doors.lobbyR.onLocked = () => this.poundLobby();
+    W.doors.lotDoor.onOpen = () => { if (['leave', 'sunrise', 'chris'].includes(f.phase)) W.dawnSpill.on = true; };
     add({ mesh: W.thermoMesh, range: 2.0, enabled: () => ['sewing', 'voices'].includes(f.phase), prompt: () => 'Thermostat',
       use: () => { f.thermo = true; g.sound.clunk(); g.hud.toast('Set to 72°. Reading 38°F. You can see your breath.', 3.5); } });
     add({ mesh: W.radMesh, range: 2.2, enabled: () => f.phase === 'sewing' && !f.rad, hold: 2.0, prompt: () => 'Open the radiator valve',
@@ -236,6 +246,7 @@ export class Story {
     this.blink.meter = 1; this.blink.lid = 0; this.blink.forced = 0; g.flashOn = true; S.bashT = 0; S._graceSet = false; S.seenEver = false;
     if (this.cp.id === 'E') { this.slamState(false); }
     else if (this.cp.id === 'G') { this.chaseState(false); }
+    else if (this.cp.id === 'H') { this.clockoutState(); }
     else if (this.cp.id === 'F') { this.mcleanHuntState(true); g.setView(31.0, -31.5, Math.PI / 2, 0); this.obj(this.wo117Obj()); }
     else {
       for (const d of [W.doors.butlerDoor, W.doors.suiteDoor, W.doors.duboseDoor]) { d.broken = false; d.locked = false; d.setOpen(true, false); }
@@ -254,12 +265,13 @@ export class Story {
 
   }
   end() {
-    const g = this.g; this.f.ended = true; this.S.active = false; this.endPeek(); g.sound.clunk(true); g.post.uniforms.glitch.value = 1; g.sound.setMuffle(20000);
-    this.warm && this.warm.set(0); this.chaseSong && this.chaseSong.stop(0.3); this.heart && this.heart.stop();
-    g.showEnd(`The main closed at ${this._mainTime || this.clockStr()} on Christmas morning. The lights came up, the hum came back, and the singing stopped like somebody had shut a door on it.<br><br>
-      Day shift found you in the shop with the door shut, sitting on the floor by MDP-1 with your flashlight still on. Your radio and keys were in the tray at the front desk, signed over at 6:51.<br>
-      Dee's board never logged an outage. Room 117 has heat. The DuBose sewing room read 71°F by eight, and nobody could say why it had been cold.<br><br>
-      Some rooms in the old house stay cold at Christmas, whatever the thermostat says.<br><br><b>END OF SHIFT</b>`);
+    const g = this.g; this.f.ended = true; this.S.active = false; this.endPeek(); g.post.uniforms.glitch.value = 0.6; g.sound.setMuffle && g.sound.setMuffle(20000);
+    this.warm && this.warm.set(0); this.chaseSong && this.chaseSong.stop(0.3); this.heart && this.heart.stop(); this.outSong && this.outSong.stop(0.5); this.morning && this.morning.set(0.25);
+    g.showEnd(`The main closed at ${this._mainTime || '6:5x AM'} on Christmas morning. The lights came up, the hum came back, and the singing stopped like somebody had shut a door on it.<br><br>
+      You clocked out at ${this._outTime || '7:00 AM'}. The dock went dark one more time, and something hummed in it. Then Chris came in from the lot with a flashlight, said you looked pale as a sheet, and sent you home.
+      Something on the radio about a containment breach at a lab out in Triangle Park. He figured it was hoopla.<br>
+      Your radio and keys were in the tray at the front desk, signed over at 6:51. Dee's board never logged an outage. Room 117 has heat. The DuBose sewing room read 71°F by eight, and nobody could say why it had been cold.<br><br>
+      You walked out the employee-lot door at ${this._leaveTime || '7:0x AM'} and stood in the lot while the sun came up over the trees. Christmas morning. Frost on the windshields. Nothing behind you but the building.<br><br><b>END OF SHIFT</b>`);
   }
 
   // ================= Christmas-shift continuation =================
@@ -406,6 +418,7 @@ export class Story {
   // checkpoint G state (live from blackout(), or on retry): power out, no radio, 173 at the far end of McLean hall
   chaseState(live) {
     const g = this.g, f = this.f, W = this.W, D = W.doors, S = this.S, st = this.statue, s = g.sound;
+    if (!live) this.resetDenouement();
     f.phase = 'chase'; f.mainPower = false; f.mdp = 0; f.radio = false; f.radioIn = true; f.keysIn = true; g.inv.delete('DuBose key');
     W.deskRadio.visible = true; W.deskKeys.visible = true; W.mdpTripped.visible = true; W.mdpClosed.visible = false; if (W.mdpHandle) W.mdpHandle.rotation.z = 0;
     this.ch = { t: 0, surgeT: live ? 7.4 : 0.8, surge: 0, stingT: 0, songT: live ? 7.4 : 0.3, beats: {} };
@@ -482,10 +495,130 @@ export class Story {
     g.post.uniforms.glitch.value = 0.7; g.shake = 0.35; this.obj('');
     g.hud.toast('MDP-1  CLOSED  · ' + this._mainTime, 3);
     this.after(1.8, () => this.say([[ME, '...', 1.4], [ME, 'It stopped.', 2.0]]));
-    this.after(4.4, () => { if (s.ctx) { s.rattle(W.anchors.rollup); s.backup(W.anchors.rollup, 5); } });
-    this.after(6.4, () => this.say([[ME, 'Day shift.', 1.6]]));
-    this.after(8.6, () => this.end());
+    this.after(4.4, () => { if (s.ctx) s.rattle(W.anchors.rollup); });
+    this.after(5.6, () => this.say([[ME, 'Seven o\'clock. ...Clock out. Go home.', 2.4]], () => this.clockoutState(true)));
   }
+  // checkpoint H (live after MDP-1, or on retry): main closed, lights on, it's gone. The time clock takes your badge now.
+  clockoutState(live) {
+    const g = this.g, f = this.f, W = this.W, S = this.S, st = this.statue, s = g.sound;
+    f.phase = 'clockout'; f.mdp = 2; f.mainPower = true; f.out = false; f.radio = false; f.radioIn = true; f.keysIn = true; S.active = false; S.hunting = false; st.visible = false; st.position.set(0, -50, 0);
+    W.mdpTripped.visible = false; W.mdpClosed.visible = true; this.chaseSong && this.chaseSong.stop(0.05); this.chaseSong = null; this.heart && this.heart.stop(); this.heart = null;
+    for (const v of W.vlights) if (CHASE_GROUPS.includes(v.group)) { v.on = true; v.level = 1; if (v._fl0 !== undefined) v.flicker = v._fl0; }
+    this.resetDenouement();
+    if (!live) { g.player.vel.set(0, 0, 0); g.setView(MDP_SPOT.x, MDP_SPOT.z, MDP_SPOT.yaw + Math.PI, 0); if (s.ctx) for (const L of s.loops) L.set(L.base); }
+    this.obj('Clock out — time clock on the dock wall<br>shop → dock');
+    this.saveCP('H');
+  }
+  // undo everything after the clock-out (used by checkpoint G/H retries so a retry never lands in a half-finished 7 AM)
+  resetDenouement() {
+    const g = this.g, f = this.f, W = this.W; f.out = false; this.cr = null; W.chris.visible = false; W.chrisCol.disabled = true; W.chrisLight.on = false; W.chrisBeam.visible = true;
+    g.flashDead = false; g.dark = false; g.outdoor = 0; W.dawn.visible = false; W.dawnSpill.on = false; g.post.uniforms.bright.value = 1; this.sunT = 0; this.lookT = 0;
+    this.outSong && this.outSong.stop(0.05); this.outSong = null; this.hummed = false; this.morning && this.morning.stop(); this.morning = null;
+    if (this._preOn) { for (const [v, on, fl] of this._preOn) { v.on = on; v.flicker = fl; } this._preOn = null; }
+    for (const v of W.lotLights) v.on = true;
+    const ld = W.doors.lotDoor; ld.locked = true; ld.lockedMsg = 'Employee lot. You\'re on till seven.'; if (ld.open) ld.setOpen(false, false); W.lotBlock.disabled = false;
+  }
+  // ================= 7:00 AM: clock out, the dark again, Chris, the lot =================
+  punchOut() {
+    const g = this.g, f = this.f, s = g.sound; if (f.out) return; f.out = true; f.phase = 'outdark';
+    g.time = Math.max(g.time, 86400 + 7 * 3600 + 12); this._outTime = this.clockStr(); s.ctx && s.punch();
+    g.hud.toast('OUT  ' + this._outTime + '   ·   ENGINEERING / 3RD SHIFT', 3); this.obj('');
+    this.after(1.1, () => this.outBlackout());
+  }
+  // the badge clears and the whole building drops again: every light, your flashlight. And the humming. (Nothing hunts you here.)
+  outBlackout() {
+    const g = this.g, W = this.W, s = g.sound, f = this.f; f.phase = 'outdark';
+    this._preOn = []; for (const v of W.vlights) { if (['lot', 'dawn', 'chris'].includes(v.group)) continue; this._preOn.push([v, v.on, v.flicker]); v.on = false; v.flicker = 0; }
+    this._tvWas = this.tvOn; this.tvOn = false; W.tvLight.on = false; this.tv && this.tv.set(0);
+    if (s.ctx) { s.powerDown(); for (const L of s.loops) L.set(0); } g.shake = 0.6; g.post.uniforms.glitch.value = 0.9;
+    g.dark = true; g.flashOn = true; g.flashDead = true; this.after(0.25, () => { g.flashOn = false; }); this.after(0.45, () => { g.flashOn = true; }); this.after(0.62, () => { g.flashOn = false; s.ctx && s.burst({ f: 2500, q: 5, peak: 0.2, rel: 0.03 }); });
+    this.after(1.4, () => { if (s.ctx) { this.outSong && this.outSong.stop(); this._songPos = new THREE.Vector3(3.0, 1.5, 10.4); this.outSong = s.lullaby(this._songPos, 0.26, { gap: 1.4, ref: 2.6, roll: 0.9 }); this.outSong.clarity(0.75); } this.hummed = true; });
+    this.after(2.8, () => this.say([[ME, '...No.', 1.6]]));
+    this.after(4.0, () => g.hud.toast('Click. Click. The flashlight\'s dead.', 3));
+    this.after(7.2, () => this.say([[ME, 'Not again. Not now.', 2.0]]));
+    this.after(10.0, () => this.chrisArrive());
+  }
+  // day shift: the lot door unlocks from outside and Chris comes in with a flashlight
+  chrisArrive() {
+    const g = this.g, W = this.W, s = g.sound, f = this.f; if (this.cr) return; f.phase = 'chris';
+    const ld = W.doors.lotDoor; if (s.ctx) { s.locked(new THREE.Vector3(15.95, 1, 10.3)); s.clunk(); }
+    this.after(0.6, () => { ld.setOpen(true); W.dawnSpill.on = true; });
+    W.chris.visible = true; W.chris.position.y = 0; W.placeChris(18.3, 10.3, -Math.PI / 2); W.chrisLight.on = true; W.chrisBeam.visible = true;
+    this.cr = { t: 0, ph: 0, wait: 0.9, pts: [[17.0, 10.3], [15.0, 10.2]], i: 0, mode: 'enter', said: false, flash: true, stepPh: 0 };
+  }
+  chrisTarget() { // where he stops: a step and a half short of you, inside the dock (or at the doorway you're in)
+    const p = this.g.player.pos, reg = this.W.regionAt(p.x, p.z);
+    if (reg === 'office') return [2.9, 1.4]; if (reg === 'corridor') return [9.2, 1.4]; if (reg !== 'dock') return [9.0, 6.0];
+    const cx = 13.0, cz = 9.0; let dx = cx - p.x, dz = cz - p.z; const d = Math.hypot(dx, dz) || 1; return [Math.max(1.2, Math.min(14.8, p.x + dx / d * 1.6)), Math.max(1.2, Math.min(10.8, p.z + dz / d * 1.6))];
+  }
+  chrisArrived() {
+    const C = this.cr; if (C.mode === 'talk') return; C.mode = 'talk';
+    this.say([[ME, '...You hear that?', 1.8], [CHRIS, 'Hear what? That\'s the heat kicking on. Old pipes sing in the cold.', 5.2]], () => this.outLightsBack());
+  }
+  outLightsBack() {
+    const g = this.g, s = g.sound, W = this.W, C = this.cr;
+    if (s.ctx) { s.powerUp(); for (const L of s.loops) L.set(L.base); } for (const [v, on, fl] of this._preOn || []) { v.on = on; v.flicker = fl; } this._preOn = null;
+    if (this._tvWas) { this.tvOn = true; W.tvLight.on = true; this.tv && this.tv.set(0.07); }
+    this.outSong && this.outSong.stop(1.2); this.outSong = null; g.flashDead = false; g.dark = false; g.post.uniforms.glitch.value = 0.35; this.hummed = false;
+    this.after(0.8, () => { if (C) { C.flash = false; W.chrisLight.on = false; W.chrisBeam.visible = false; s.ctx && s.burst({ f: 2500, q: 5, peak: 0.12, rel: 0.03 }); } });
+    this.after(1.0, () => this.say([[CHRIS, 'There we go. ...Man, you\'re pale as a sheet.', 3.6], [ME, 'Long night.', 1.6], [CHRIS, 'Go home and get some sleep. I\'ve got it from here.', 4.0],
+      [CHRIS, 'Heard on the radio driving in. Some kind of containment breach at a research lab out in Triangle Park.', 7.0], [CHRIS, 'Probably a bunch of hoopla. They\'ll call it a drill by lunch.', 4.4],
+      [ME, '...Yeah. Probably.', 1.8], [CHRIS, 'The parking lot door is open. Go on home. Merry Christmas.', 4.6], [ME, 'Merry Christmas, Chris.', 1.8]], () => this.unlockLot()));
+  }
+  unlockLot() {
+    const g = this.g, W = this.W, f = this.f, ld = W.doors.lotDoor; f.phase = 'leave';
+    ld.locked = false; ld.lockedMsg = null; W.lotBlock.disabled = true; W.dawn.visible = true; if (ld.open) W.dawnSpill.on = true;
+    this.obj('Go home — out the employee-lot door');
+    if (this.cr) { this.cr.mode = 'clockin'; this.cr.pts = [[1.15, 4.7]]; this.cr.i = 0; } // he goes to clock himself in
+  }
+  // out in the lot: the sun's coming up in the east (+x). Walk out a ways and look at it; then the tape ends.
+  updateLot(dt, reg) {
+    const g = this.g, f = this.f, W = this.W, p = g.player.pos, s = g.sound;
+    if (W.dawn.visible) { g.outdoor = Math.max(0, Math.min(1, (p.x - 15.7) / 2.8)); W.dawnSpill.level = 1; }
+    if (f.phase === 'leave' && reg === 'lot') { f.phase = 'sunrise'; this.sunT = 0; this.lookT = 0; this._leaveTime = this.clockStr(); this.obj(''); if (s.ctx) this.morning = s.morning(0.55);
+      this.after(1.2, () => this.say([[ME, '...', 1.4]])); this.after(2.5, () => g.hud.toast('The sun\'s coming up.', 3)); }
+    if (f.phase !== 'sunrise' && f.phase !== 'dawnout') return;
+    this.sunT += dt; W.sun.position.y = Math.min(20, 3 + this.sunT * 0.36); // it clears the treeline while you watch
+    const L = W.lotLights; for (let i = 0; i < L.length; i++) if (L[i].on && this.sunT > 3 + i * 2.6) { L[i].on = false; s.ctx && s.buzz(0.12, L[i].pos); } // photocells click off one by one
+    if (f.phase === 'sunrise') {
+      const cam = g.camera, fw = this._fw3 || (this._fw3 = new THREE.Vector3()); cam.getWorldDirection(fw); const to = (this._sv || (this._sv = new THREE.Vector3())).copy(W.sun.position).sub(cam.position).normalize();
+      if (p.x > 23 && fw.dot(to) > 0.88) this.lookT += dt;
+      if (p.x > 23 && (this.lookT > 1.6 || this.sunT > 45)) { f.phase = 'dawnout'; this._outT = 0; this.after(0.4, () => this.say([[ME, 'Merry Christmas.', 2.0]])); }
+    } else { this._outT += dt; g.post.uniforms.bright.value = 1 + Math.min(1, this._outT / 4.5) * 0.9; if (this._outT > 4.8 && !f.ended) this.end(); }
+  }
+  updateChris(dt) {
+    const g = this.g, W = this.W, C = this.cr, G = W.chris, s = g.sound; if (!C || !G.visible) return;
+    C.t += dt; const p = g.player.pos, R = W.chrisArmR, Lf = W.chrisArmL, H = W.chrisHead; const lerp = (a, b, k) => a + (b - a) * Math.min(1, dt * k);
+    if (C.wait > 0) { C.wait -= dt; W.placeChris(G.position.x, G.position.z, G.rotation.y); this.chrisBeamLight(); return; }
+    let tgt = null;
+    if (C.mode === 'enter' || C.mode === 'clockin') tgt = C.pts[Math.min(C.i, C.pts.length - 1)];
+    else if (C.mode === 'approach') tgt = this.chrisTarget();
+    let moving = false;
+    if (tgt) { const dx = tgt[0] - G.position.x, dz = tgt[1] - G.position.z, d = Math.hypot(dx, dz); const near = C.mode === 'approach' && Math.hypot(p.x - G.position.x, p.z - G.position.z) < 1.9;
+      if (d < 0.06 || near) { if (C.mode === 'enter') { C.i++; if (C.i >= C.pts.length) C.mode = 'approach'; if (C.i === 2 && !C.said) { C.said = true; this.say([[CHRIS, 'Morning. Why\'s the whole dock dark?', 3.0]]); } }
+        else if (C.mode === 'approach') { this.chrisArrived(); }
+        else if (C.mode === 'clockin') { C.mode = 'idle'; if (s.ctx) s.punch(); } }
+      else { const m = Math.min(d, 1.3 * dt); G.position.x += dx / d * m; G.position.z += dz / d * m; G.rotation.y = lerp(G.rotation.y, G.rotation.y + Math.atan2(Math.sin(Math.atan2(dx, dz) - G.rotation.y), Math.cos(Math.atan2(dx, dz) - G.rotation.y)), 5); moving = true; }
+      if (C.mode === 'approach' && C.t > 16 && !moving) this.chrisArrived(); }
+    if (C.mode === 'approach' && C.t > 18) this.chrisArrived(); // never hang the scene on pathing
+    const ld = W.doors.lotDoor; if (C.mode !== 'enter' && ld.open && !C.shut && G.position.x < 14.6 && ['chris', 'outdark'].includes(this.f.phase)) { C.shut = true; ld.setOpen(false); W.dawnSpill.on = false; } // the closer pulls it shut behind him
+    if (!moving) { const by = Math.atan2(p.x - G.position.x, p.z - G.position.z); const dy = Math.atan2(Math.sin(by - G.rotation.y), Math.cos(by - G.rotation.y)); if (C.mode === 'talk' || C.mode === 'approach') G.rotation.y = lerp(G.rotation.y, G.rotation.y + dy, 2.5); }
+    // legs + arms
+    if (moving) { C.ph += dt * 4.6; const sw = Math.sin(C.ph) * 0.38; W.chrisLegs[0].rotation.x = sw; W.chrisLegs[1].rotation.x = -sw; G.position.y = Math.abs(Math.cos(C.ph)) * 0.02;
+      if (Math.floor(C.ph / Math.PI) !== C.stepPh) { C.stepPh = Math.floor(C.ph / Math.PI); s.ctx && s.footstep(new THREE.Vector3(G.position.x, 0.1, G.position.z), 0.9); }
+      Lf.S.rotation.x = lerp(Lf.S.rotation.x, -sw * 0.45, 8); Lf.E.rotation.x = lerp(Lf.E.rotation.x, -0.2, 6); }
+    else { W.chrisLegs[0].rotation.x = lerp(W.chrisLegs[0].rotation.x, 0, 6); W.chrisLegs[1].rotation.x = lerp(W.chrisLegs[1].rotation.x, 0, 6); G.position.y = Math.sin(C.t * 0.8) * 0.004;
+      Lf.S.rotation.x = lerp(Lf.S.rotation.x, 0.04, 4); Lf.E.rotation.x = lerp(Lf.E.rotation.x, -0.12, 4); }
+    const talking = this.subT > 0 && this.curWho === CHRIS;
+    if (C.flash) { R.S.rotation.x = lerp(R.S.rotation.x, -0.55, 5); R.E.rotation.x = lerp(R.E.rotation.x, -0.7, 5); }
+    else { const gest = talking ? Math.sin(C.t * 2.1) * 0.12 - 0.25 : (moving ? Math.sin(C.ph) * 0.4 : 0.03); R.S.rotation.x = lerp(R.S.rotation.x, gest, 4); R.E.rotation.x = lerp(R.E.rotation.x, talking ? -0.55 : -0.15, 4); }
+    const yaw = Math.atan2(p.x - G.position.x, p.z - G.position.z) - G.rotation.y; const ty = Math.max(-0.8, Math.min(0.8, Math.atan2(Math.sin(yaw), Math.cos(yaw))));
+    H.rotation.order = 'YXZ'; const look = C.mode === 'talk' || C.mode === 'approach' || talking; H.rotation.y = lerp(H.rotation.y, look ? ty : 0, 3);
+    const dh = Math.hypot(p.x - G.position.x, p.z - G.position.z); H.rotation.x = lerp(H.rotation.x, look ? Math.atan2(1.88 - (p.y + 1.62), Math.max(0.5, dh)) * 0.8 + (talking ? Math.sin(C.t * 3) * 0.03 : 0) : 0.1, 3); // tall: looks down at you
+    W.placeChris(G.position.x, G.position.z, G.rotation.y); W.chrisCol.disabled = moving || C.mode === 'enter';
+    this.chrisBeamLight();
+  }
+  chrisBeamLight() { const W = this.W, v = W.chrisLight; if (!v.on) return; const fl = W.chrisFlash; fl.updateMatrixWorld(true); v.pos.copy(fl.localToWorld((this._cb || (this._cb = new THREE.Vector3())).set(0, 1.6, 0))); }
   // 173 pounded on a door it can't break: it backs off somewhere you can't see, farther away than it was
   withdraw() {
     const g = this.g, S = this.S, st = this.statue, p = g.player.pos; this.bfs(p.x, p.z, true);
@@ -642,10 +775,12 @@ export class Story {
         if (vd) { this.subT = vd + 0.3; this.voiceStats.voiced++; } else { g.sound.radio(q.dur * 0.85); this.voiceStats.fallback++; } }
       else if (q.who === CLINT) { const vd = g.sound.ctx ? g.sound.voice(q.text, { pos: W.anchors.clintHead }) : 0; // in person on the dock: never radio, no squelch fallback
         if (vd) { this.subT = vd + 0.3; this.voiceStats.clintVoiced++; } else this.voiceStats.clintFallback++; }
+      else if (q.who === CHRIS) { const vd = g.sound.ctx ? g.sound.voice(q.text, { pos: W.anchors.chrisHead }) : 0; // in person on the dock: never radio, no squelch fallback
+        if (vd) { this.subT = vd + 0.3; this.voiceStats.chrisVoiced++; } else this.voiceStats.chrisFallback++; }
       else if (q.who === DEE_LIVE) { const vd = g.sound.ctx ? g.sound.voice(q.text, { pos: W.anchors.deeHead }) : 0; // in person: from her chair, never through the radio
         if (vd) { this.subT = vd + 0.3; this.voiceStats.liveVoiced++; } else this.voiceStats.liveFallback++; } } } // missing take: subtitle only, no squelch
     this.updateBlink(dt);
-    this.updateClint(dt); this.updateSmoke(dt);
+    this.updateClint(dt); this.updateSmoke(dt); this.updateChris(dt);
     // doors animate
     for (const d of W.doors) { const tgt = d.peekA && !d.open ? d.peekA : d.target; if (d.open) d.peekA = 0; d.angle += (tgt - d.angle) * Math.min(1, dt * (d.peekA ? 9 : 7)); d.pivot.rotation.y = d.angle; d.pivot.updateMatrixWorld(true); }
     // scheduled beats (story time, so they pause with the game)
@@ -663,6 +798,8 @@ export class Story {
     this.updateHaunt(dt, reg);
     if (f.phase === 'walkback' && reg === 'mclean' && p.z < -30.45) this.blackout(); // the instant you leave the lobby
     if (f.phase === 'chase' && this.ch) this.updateChase(dt, reg);
+    if (f.out) this.updateLot(dt, reg);
+    if (this.outSong && this._songPos) { const k = Math.max(0, 1 - p.distanceTo(this._songPos) / 30); this.outSong.clarity(0.55 + k * 0.4); }
     // death camera wrench
     if (this.dying) { this.snapT += dt; if (this.snapT > 0.45) g.post.uniforms.dead.value = 1; if (this.snapT > 1.2 && g.state === 'play') { g.showDead('SIGNAL LOST · ' + this.clockStr() + ' · ' + this.placeName(reg)); return; } g.player.pitch = Math.min(0.2, g.player.pitch + dt * 2); g.camera.rotation.z = Math.min(1.4, this.snapT * 9) * -1; }
   }
