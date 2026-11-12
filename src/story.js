@@ -5,6 +5,7 @@ import { makeStatue } from './statue.js';
 
 const DEE = 'DEE (NIGHT AUDIT)';
 const ME = 'YOU';
+const SHOP_WAKE = { x: 2.55, z: -2.85, yaw: 0.615, pitch: -0.2 }; // maintenance office, beside the desk chair, facing the desk
 const CELL = 0.25;
 const DY_BAR = 0.34; // DuBose floor height (matches world.js DY)
 const NB = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
@@ -15,7 +16,7 @@ export class Story {
   constructor(g) {
     this.g = g; const W = this.W = g.W;
     this.f = { clocked: false, radio: false, wo1: 0, wo2: 0, ballast: false, key: false, phase: 'clockin', teased: false, suiteT: 0, power: true, breaker: false, ended: false, thermo: false, rad: false, cried: false, ptac: 0 };
-    this.tickets = []; this.queue = []; this.subT = 0; this.cp = null; this.timers = []; this.cold = 0; this.puffs = []; this.puffT = 0; this.rock = { amp: 0, t: 0 }; this.peekDoor = null;
+    this.tickets = []; this.queue = []; this.subT = 0; this.cp = null; this.timers = []; this.cold = 0; this.puffs = []; this.puffT = 0; this.rock = { amp: 0, t: 0 }; this.peekDoor = null; this.voiceStats = { voiced: 0, fallback: 0 };
     // statue
     this.statue = makeStatue(g.T); this.statue.visible = false; this.statue.position.set(0, -50, 0); g.scene.add(this.statue);
     this.S = { active: false, hunting: false, seen: false, moved: false, bashT: 0, bashTick: 0, seenEver: false };
@@ -147,7 +148,7 @@ export class Story {
   saveCP(id) { const p = this.g.player; this.cp = { id, x: p.pos.x, z: p.pos.z, yaw: p.yaw, sx: this.statue.position.x, sz: this.statue.position.z }; }
   retry() {
     const g = this.g, f = this.f, W = this.W, S = this.S; g.player.frozen = false; g.post.uniforms.dead.value = 0; this.dying = 0; g.shake = 0;
-    this.timers = []; this.endPeek(); this.queue = []; g.hud.sub('', ''); this.subT = 0;
+    this.timers = []; this.endPeek(); this.queue = []; g.hud.sub('', ''); this.subT = 0; g.sound.ctx && g.sound.stopVoice();
     this.blink.meter = 1; this.blink.lid = 0; this.blink.forced = 0; g.flashOn = true; S.bashT = 0; S._graceSet = false; S.seenEver = false;
     if (this.cp.id === 'E') { this.slamState(false); }
     else if (this.cp.id === 'F') { this.mcleanHuntState(true); g.setView(31.0, -31.5, Math.PI / 2, 0); this.obj(this.wo117Obj()); }
@@ -187,7 +188,14 @@ export class Story {
     const g = this.g, f = this.f, S = this.S; f.phase = 'haunt_call'; S.active = false; this.statue.visible = false; this.scrape && this.scrape.set(0); this.endPeek(); this._teaseSeen = true;
     g.sound.clunk(true); g.post.uniforms.glitch.value = 0.6; this.obj('');
     this.say([[ME, '...I\'m in. I\'m back in McLean.', 2.2], [DEE, 'Okay. Okay. Sit down a minute, hon.', 2.4]], () => {
-      g.cut('2:41 AM', () => { g.time = Math.max(g.time, 86400 + 2 * 3600 + 41 * 60); this.hauntCall(); }); });
+      g.cut('2:41 AM', () => { g.time = Math.max(g.time, 86400 + 2 * 3600 + 41 * 60); this.wakeInShop(); this.hauntCall(); }); });
+  }
+  // the time skip: you sat down in the shop for "a minute" and it's 2:41. Standing by the desk chair, looking at the desk + work-order screen.
+  wakeInShop() {
+    const g = this.g, W = this.W; this.endPeek(); g.player.vel.set(0, 0, 0); g.player.frozen = false;
+    g.setView(SHOP_WAKE.x, SHOP_WAKE.z, SHOP_WAKE.yaw, SHOP_WAKE.pitch);
+    const od = W.doors.officeDoor; od.broken = false; od.locked = false; if (!od.open) od.setOpen(true, false); // door's open: corridor/dock out
+    this.setGroup('office', true, 1, 0);
   }
   hauntCall() {
     const g = this.g, f = this.f, W = this.W;
@@ -200,7 +208,7 @@ export class Story {
       f.phase = 'haunt_go'; W.doors.backDoor.locked = false; W.doors.duboseDoor.locked = false;
       this.setGroup('haunt', true, 0.75, 0.03);
       if (g.sound.ctx) { this.song && this.song.stop(); this.song = g.sound.lullaby(W.anchors.sewing, 0.16); }
-      this.obj('Check the DuBose sewing room<br>terrace → side door → stair hall → back hall door (under the balcony)'); });
+      this.obj('Check the DuBose sewing room<br>shop → service corridor → McLean hall → terrace → side door → stair hall → back hall door (under the balcony)'); });
   }
   enterSewing() {
     const g = this.g, f = this.f; f.phase = 'sewing'; this.song && this.song.stop(0.06); this.song = null; this.rock.amp = 0.17; this.rock.t = 0;
@@ -255,11 +263,12 @@ export class Story {
     this.say([[DEE, 'You\'re back in McLean? ...Okay. I\'m not gonna ask.', 3], [DEE, 'The old night guys never liked that room at Christmas. I never asked them why.', 4.2],
       [DEE, 'One more, then go home. 117 called down freezing, so I moved them to 121. PTAC\'s dead. Get it heating before day shift?', 6]], () => {
       this.tickets = [...this.tickets.filter(t => t.id === 'WO-4473'), { id: 'WO-4474', text: 'No heat — Rm 117 PTAC (guest moved to 121)' }]; g.hud.tickets(this.tickets); g.sound.ding();
+      if (this.S.active && !this.S.hunting) this.S.huntDelay = Math.min(this.S.huntDelay, 2.5);
       this.obj(this.wo117Obj()); });
   }
   mcleanHuntState(retry) {
     const S = this.S, st = this.statue, p = this.g.player.pos, f = this.f; f.phase = 'wo117';
-    S.active = true; st.visible = true; S.farSpeed = 3.0; S.nearSpeed = 4.6; S.hunting = false; S.huntDelay = retry ? 6 : 16; S._graceSet = true; S.bashT = 0; // live: let Dee finish before it starts moving
+    S.active = true; st.visible = true; S.farSpeed = 3.0; S.nearSpeed = 4.6; S.hunting = false; S.huntDelay = retry ? 6 : 60; S._graceSet = true; S.bashT = 0; // live: held until Dee finishes (reachMcLean2), then a short beat
     if (retry || Math.hypot(st.position.x - p.x, st.position.z - p.z) < 12) st.position.set(43, 0, -31.5);
     const td = this.W.doors.terraceDoor; td.broken = false; td.locked = false;
     if (retry && !this.tickets.find(t => t.id === 'WO-4474')) { this.tickets.push({ id: 'WO-4474', text: 'No heat — Rm 117 PTAC (guest moved to 121)' }); this.g.hud.tickets(this.tickets); }
@@ -435,7 +444,9 @@ export class Story {
     const g = this.g, f = this.f, W = this.W, p = g.player.pos;
     // radio queue
     if (this.subT > 0) { this.subT -= dt; if (this.subT <= 0) g.hud.sub('', ''); }
-    if (this.subT <= 0 && this.queue.length) { const q = this.queue.shift(); if (q.fn) q.fn(); else { g.hud.sub(q.who, q.text); this.subT = q.dur + 0.4; if (q.who === DEE) g.sound.radio(q.dur * 0.85); } }
+    if (this.subT <= 0 && this.queue.length) { const q = this.queue.shift(); if (q.fn) q.fn(); else { g.hud.sub(q.who, q.text); this.subT = q.dur + 0.4;
+      if (q.who === DEE && g.sound.ctx) { const vd = g.sound.voice(q.text); // Dee's recorded radio take; subtitle holds for its real length
+        if (vd) { this.subT = vd + 0.3; this.voiceStats.voiced++; } else { g.sound.radio(q.dur * 0.85); this.voiceStats.fallback++; } } } }
     this.updateBlink(dt);
     // doors animate
     for (const d of W.doors) { const tgt = d.peekA && !d.open ? d.peekA : d.target; if (d.open) d.peekA = 0; d.angle += (tgt - d.angle) * Math.min(1, dt * (d.peekA ? 9 : 7)); d.pivot.rotation.y = d.angle; d.pivot.updateMatrixWorld(true); }

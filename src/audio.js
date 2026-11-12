@@ -121,6 +121,23 @@ export class Sound {
     vg.gain.setTargetAtTime(0, t + len, 0.02); o.start(t); o.stop(t + len + 0.3);
     this.burst({ f: 1900, q: 0.8, peak: 0.3, a: 0.002, hold: 0.08, rel: 0.05, dest: out, t0: t + len + 0.05 });
   }
+  // ---- Dee's recorded radio takes (src/dee-lines.js; original Piper TTS voice, radio-processed offline) ----
+  // Preloaded after the Clock In click. Relative URLs, so it works from a subfolder (GitHub Pages). A missing take just falls back to radio().
+  loadVoices(lines, base = 'audio/dee/') {
+    if (!this.ctx || this.voiceBufs) return; this.voiceBufs = {}; this.voiceFails = 0;
+    for (const [text, [file]] of Object.entries(lines)) {
+      fetch(base + file).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+        .then(ab => new Promise((res, rej) => this.ctx.decodeAudioData(ab, res, rej)))
+        .then(buf => { this.voiceBufs[text] = buf; }).catch(() => { this.voiceFails++; });
+    }
+  }
+  // play a take; returns its length in seconds, or 0 if it isn't loaded (caller falls back to the squelch)
+  voice(text) {
+    const b = this.ctx && this.voiceBufs && this.voiceBufs[text]; if (!b) return 0;
+    this.stopVoice(); const s = this.ctx.createBufferSource(); s.buffer = b; const g = this.ctx.createGain(); g.gain.value = 1.0;
+    s.connect(g); g.connect(this.master); s.start(); this._vsrc = s; s.onended = () => { if (this._vsrc === s) this._vsrc = null; }; return b.duration;
+  }
+  stopVoice() { const s = this._vsrc; this._vsrc = null; if (s) try { s.stop(); } catch (e) {} }
   // ---- Christmas-shift additions (all original synthesis) ----
   setMuffle(hz) { if (!this.ctx) return; this.muf.frequency.setTargetAtTime(Math.max(300, Math.min(20000, hz)), this.t, 0.25); }
   // An ORIGINAL wordless lullaby, hummed ("mm / oo"), slow 3/4, minor-ish. Not based on any existing song or carol.
