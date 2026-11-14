@@ -152,10 +152,10 @@ export class Sound {
     const o = C.createOscillator(); o.type = 'triangle'; const o2 = C.createOscillator(); o2.type = 'sine';
     const f1 = C.createBiquadFilter(); f1.type = 'bandpass'; f1.frequency.value = 400; f1.Q.value = 2.5; const f2 = C.createBiquadFilter(); f2.type = 'bandpass'; f2.frequency.value = 820; f2.Q.value = 4;
     const fg = C.createGain(); fg.gain.value = 0.9; o.connect(f1); o.connect(f2); f1.connect(fg); f2.connect(fg); fg.connect(voice); const sg = C.createGain(); sg.gain.value = 0.35; o2.connect(sg); sg.connect(voice);
-    const vib = C.createOscillator(); vib.frequency.value = 5.1; const vg = C.createGain(); vg.gain.value = 2.6; vib.connect(vg); vg.connect(o.frequency); vg.connect(o2.frequency);
-    const base = opts.base || 262; const beat = 0.64;
+    const vib = C.createOscillator(); vib.frequency.value = opts.vibRate || 5.1; const vg = C.createGain(); vg.gain.value = opts.vib || 2.6; vib.connect(vg); vg.connect(o.frequency); vg.connect(o2.frequency);
+    const base = opts.base || 262; const beat = opts.beat || 0.64;
     // [semitones from base, beats]
-    const tune = [[0, 2], [3, 1], [7, 2], [5, 1], [3, 1], [2, 1], [0, 1], [2, 3], [-2, 2], [0, 1], [3, 2], [2, 1], [0, 1], [-2, 1], [-5, 1], [0, 3]];
+    const tune = opts.tune || [[0, 2], [3, 1], [7, 2], [5, 1], [3, 1], [2, 1], [0, 1], [2, 3], [-2, 2], [0, 1], [3, 2], [2, 1], [0, 1], [-2, 1], [-5, 1], [0, 3]];
     o.start(); o2.start(); vib.start();
     const L = { on: true, phrases: 0 };
     const phrase = () => {
@@ -172,6 +172,22 @@ export class Sound {
     L.stop = (fade = 0.15) => { if (!L.on) return; L.on = false; clearTimeout(L.timer); out.gain.setTargetAtTime(0, this.t, fade); const end = this.t + fade * 8 + 0.5; o.stop(end); o2.stop(end); vib.stop(end); };
     return L;
   }
+
+  // ---- night two (all original synthesis) ----
+  plunge(pos) { const p = this.panner(pos, 1.5, 1.3); this.burst({ f: 160, q: 1.2, peak: 0.7, a: 0.01, hold: 0.05, rel: 0.18, dest: p, buf: this.brown }); this.tone({ f: 240, f2: 90, type: 'sine', peak: 0.12, a: 0.005, hold: 0.03, rel: 0.12, dest: p });
+    for (let i = 0; i < 3; i++) this.tone({ f: 500 + Math.random() * 500, f2: 900 + Math.random() * 600, peak: 0.04, hold: 0, rel: 0.06, dest: p, t0: this.t + 0.12 + i * 0.06 }); }
+  flush(pos) { const C = this.ctx, p = this.panner(pos, 1.8, 1.2); const n = this.noiseSrc(this.brown); const lp = C.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400; const g = C.createGain(); n.connect(lp); lp.connect(g); g.connect(p);
+    const t = this.t; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.7, t + 0.3); g.gain.setValueAtTime(0.7, t + 1.4); g.gain.exponentialRampToValueAtTime(0.0001, t + 3.6); lp.frequency.setValueAtTime(1600, t); lp.frequency.exponentialRampToValueAtTime(380, t + 3.4); n.start(t); n.stop(t + 3.8);
+    this.burst({ f: 2400, q: 4, peak: 0.15, rel: 0.05, dest: p }); setTimeout(() => this.ctx && this.gurgle(1.2), 1600); }
+  shower(pos) { const C = this.ctx, p = this.panner(pos, 1.6, 1.2); const n = this.noiseSrc(); const bp = C.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 3200; bp.Q.value = 0.6; const g = C.createGain(); g.gain.value = 0; n.connect(bp); bp.connect(g); g.connect(p); n.start();
+    g.gain.setTargetAtTime(0.35, this.t, 0.1); this.burst({ f: 600, q: 2, peak: 0.3, rel: 0.1, dest: p }); return { stop: (f = 0.3) => { g.gain.setTargetAtTime(0, this.t, f); n.stop(this.t + f * 6); } }; }
+  ignite(pos) { const p = this.panner(pos, 3, 0.8); this.burst({ f: 70, q: 0.7, peak: 1.0, a: 0.01, hold: 0.12, rel: 0.9, dest: p, buf: this.brown }); this.burst({ f: 300, q: 0.5, peak: 0.5, a: 0.02, hold: 0.1, rel: 0.5, dest: p, buf: this.brown });
+    for (let i = 0; i < 6; i++) this.burst({ f: 5000, q: 3, peak: 0.06, rel: 0.02, dest: p, t0: this.t + i * 0.05 }); }
+  burner(pos, vol = 0.18) { const C = this.ctx, p = this.panner(pos, 2.5, 1.0); const n = this.noiseSrc(this.brown); const lp = C.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 260; const g = C.createGain(); g.gain.value = 0; n.connect(lp); lp.connect(g); g.connect(p); n.start(); g.gain.setTargetAtTime(vol, this.t, 0.5);
+    const L = { on: true, base: vol, set: v => g.gain.setTargetAtTime(v, this.t, 0.3), stop: () => { L.on = false; g.gain.setTargetAtTime(0, this.t, 0.3); n.stop(this.t + 2); } }; this.loops.push(L); return L; }
+  // jump-scare stinger: a dissonant shriek cluster over a sub hit and a burst of noise (original synthesis)
+  scream() { const t = this.t; [880, 932, 1245, 1480, 1661].forEach((f, i) => this.tone({ f, f2: f * 0.94, type: i % 2 ? 'sawtooth' : 'square', peak: 0.06, a: 0.005, hold: 0.45, rel: 0.6 }));
+    this.burst({ f: 2500, q: 0.4, peak: 0.6, a: 0.002, hold: 0.25, rel: 0.5 }); this.tone({ f: 55, f2: 30, type: 'sine', peak: 0.5, a: 0.005, hold: 0.15, rel: 0.8 }); this.burst({ f: 120, q: 0.7, peak: 1.0, a: 0.001, hold: 0.06, rel: 0.6, buf: this.brown }); }
   // A short, distant infant cry. Audio only, played once, filtered as if through a wall. Never looped.
   babyCry(pos) {
     const C = this.ctx, p = this.panner(pos, 1.4, 1.2); const out = C.createGain(); out.gain.value = 0.2; const lp = C.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1700; out.connect(lp); lp.connect(p);

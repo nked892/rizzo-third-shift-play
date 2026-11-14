@@ -1,17 +1,20 @@
 import * as THREE from 'three';
 import { makeTextures } from './textures.js';
 import { buildWorld } from './world.js';
+import { buildNightSky, MOON_DIR } from './gfx.js';
 import { Sound } from './audio.js';
 import { Story } from './story.js';
 import { DEE_LINES } from './dee-lines.js';
 import { CLINT_LINES } from './clint-lines.js';
 import { CHRIS_LINES } from './chris-lines.js';
+import { N2_LINES } from './n2-lines.js';
 
 const params = new URLSearchParams(location.search);
 const $ = id => document.getElementById(id);
 const canvas = $('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: params.has('shots') || params.has('manual') });
 renderer.setPixelRatio(1);
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; renderer.shadowMap.autoUpdate = false; // only the moon casts; re-rendered on demand (see updateMoon)
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x020304);
 scene.fog = new THREE.FogExp2(0x040506, 0.036);
@@ -29,9 +32,47 @@ const hemi = new THREE.HemisphereLight(0x8090a8, 0x201810, 0.5); scene.add(hemi)
 // 7 AM, the employee lot: a low warm sun from the east (+x) and a dawn haze, blended in by game.outdoor (0 inside .. 1 out in the lot; Story sets it)
 const sunLight = new THREE.DirectionalLight(0xffc49a, 0); sunLight.position.copy(W.anchors.lot).addScaledVector(W.sunDir, 60); sunLight.target.position.copy(W.anchors.lot); scene.add(sunLight); scene.add(sunLight.target);
 const NIGHT_FOG = new THREE.Color(0x040506), DAWN_FOG = new THREE.Color(0x8c8a98), NIGHT_SKY = new THREE.Color(0x020304), HEMI_SKY = new THREE.Color(0x8090a8), DAWN_HEMI = new THREE.Color(0xb8b4c8);
-function updateOutdoor() { const k = Math.max(0, Math.min(1, game.outdoor || 0));
-  scene.fog.color.copy(NIGHT_FOG).lerp(DAWN_FOG, k); scene.fog.density = 0.036 + (0.011 - 0.036) * k; scene.background.copy(NIGHT_SKY).lerp(DAWN_FOG, k);
-  hemi.intensity = (0.5 + k * 0.75) * (game.dark ? 0.28 : 1); hemi.color.copy(HEMI_SKY).lerp(DAWN_HEMI, k); sunLight.intensity = k * (game.sunGain ?? 2.0); }
+// gfx pass 1: per-area night mood (ambient fill + fog), eased so doorways don't pop. Unlisted areas keep the original values.
+const AREA = { dock: { hemi: 0.62, fog: new THREE.Color(0x070a12), dens: 0.03 }, mclean: { hemi: 0.3, fog: new THREE.Color(0x030303), dens: 0.045 },
+  // gfx pass 2: the rest of the building, same idea (dim fill, close dark fog indoors; cold blue haze outdoors)
+  office: { hemi: 0.42, fog: new THREE.Color(0x040404), dens: 0.04 }, corridor: { hemi: 0.3, fog: new THREE.Color(0x030303), dens: 0.05 }, stairB: { hemi: 0.26, fog: new THREE.Color(0x030303), dens: 0.05 },
+  pantry: { hemi: 0.36, fog: new THREE.Color(0x030303), dens: 0.045 }, lobby: { hemi: 0.38, fog: new THREE.Color(0x040404), dens: 0.04 }, room117: { hemi: 0.3, fog: new THREE.Color(0x030303), dens: 0.045 }, bath117: { hemi: 0.3, fog: new THREE.Color(0x030303), dens: 0.045 },
+  terrace: { hemi: 0.55, fog: new THREE.Color(0x070a12), dens: 0.03 }, lot: { hemi: 0.6, fog: new THREE.Color(0x070a12), dens: 0.028 }, boiler: { hemi: 0.24, fog: new THREE.Color(0x040302), dens: 0.055 },
+  duboseHall: { hemi: 0.32, fog: new THREE.Color(0x040302), dens: 0.045 }, library: { hemi: 0.3, fog: new THREE.Color(0x040302), dens: 0.045 }, dining: { hemi: 0.32, fog: new THREE.Color(0x040302), dens: 0.045 },
+  butler: { hemi: 0.32, fog: new THREE.Color(0x040302), dens: 0.045 }, foyer: { hemi: 0.3, fog: new THREE.Color(0x040302), dens: 0.04 }, suite: { hemi: 0.3, fog: new THREE.Color(0x040302), dens: 0.045 },
+  backhall: { hemi: 0.26, fog: new THREE.Color(0x030202), dens: 0.05 }, sewing: { hemi: 0.3, fog: new THREE.Color(0x030303), dens: 0.045 }, closet: { hemi: 0.2, fog: new THREE.Color(0x020202), dens: 0.05 }, bar: { hemi: 0.3, fog: new THREE.Color(0x040302), dens: 0.045 } };
+const AREA_DEF = { hemi: 1, fog: NIGHT_FOG, dens: 0.036 }; const area = { hemi: 1, fog: NIGHT_FOG.clone(), dens: 0.036 }; let lastReg = null, areaSnap = false;
+function updateOutdoor(dt = 0.016) { const k = Math.max(0, Math.min(1, game.outdoor || 0));
+  const reg = W.regionAt(camera.position.x, camera.position.z) || lastReg; lastReg = reg; const A = AREA[reg] || AREA_DEF; const e = areaSnap ? 1 : Math.min(1, dt * 2.5); areaSnap = false;
+  area.hemi += (A.hemi - area.hemi) * e; area.fog.lerp(A.fog, e); area.dens += (A.dens - area.dens) * e;
+  scene.fog.color.copy(area.fog).lerp(DAWN_FOG, k); scene.fog.density = area.dens + (0.011 - area.dens) * k; scene.background.copy(NIGHT_SKY).lerp(DAWN_FOG, k);
+  hemi.intensity = (0.5 * area.hemi + k * (0.5 * (1 - area.hemi) + 0.75)) * (game.dark ? 0.28 : 1); hemi.color.copy(HEMI_SKY).lerp(DAWN_HEMI, k); sunLight.intensity = k * (game.sunGain ?? 2.0); }
+// ---------- the full moon over the open-air dock (Christmas Eve 2026 really is a full moon) ----------
+const nightSky = W.nightSky = buildNightSky(scene);
+const MOON_C = new THREE.Vector3(8, 0, 6);
+// A directional light would shine through every ceiling in the building, so the moon is a narrow, far-away, non-decaying spot: near-parallel rays,
+// its cone only covers the yard (and the first few metres of the office / corridor, whose ceilings sit in its shadow map and shade them). It also fades with distance from the dock.
+const moon = W.moon = new THREE.SpotLight(0x9fb4e6, 0, 0, 0.215, 0.35, 0); moon.position.copy(MOON_C).addScaledVector(MOON_DIR, 60); moon.target.position.copy(MOON_C); scene.add(moon); scene.add(moon.target);
+moon.castShadow = true; moon.shadow.mapSize.set(1024, 1024); moon.shadow.camera.near = 35; moon.shadow.camera.far = 95; moon.shadow.bias = -0.0004; moon.shadow.normalBias = 0.03;
+const SHADOW_BOX = new THREE.Box3(new THREE.Vector3(-6, -1, -15), new THREE.Vector3(22, 9, 26));
+{ const bb = new THREE.Box3(); scene.updateMatrixWorld(true); scene.traverse(o => { if (!o.isMesh || o.userData.noShadow) return; bb.setFromObject(o); if (!bb.intersectsBox(SHADOW_BOX)) return; const m = o.material; if (!m || Array.isArray(m)) return;
+  const basic = m.isMeshBasicMaterial || m.isSpriteMaterial; o.receiveShadow = !basic && !o.userData.decals; o.castShadow = !basic && !m.transparent && m.visible !== false && !o.userData.decals; }); }
+// second moon spot for the terrace (same moon, same direction): its own small shadow map, only on while you're on or next to the terrace
+const MOON_T = new THREE.Vector3(41, 0, -31.5); const moon2 = W.moon2 = new THREE.SpotLight(0x9fb4e6, 0, 0, 0.13, 0.4, 0); moon2.position.copy(MOON_T).addScaledVector(MOON_DIR, 60); moon2.target.position.copy(MOON_T); scene.add(moon2); scene.add(moon2.target);
+moon2.castShadow = true; moon2.shadow.mapSize.set(1024, 1024); moon2.shadow.camera.near = 40; moon2.shadow.camera.far = 90; moon2.shadow.bias = -0.0004; moon2.shadow.normalBias = 0.03;
+{ const TB = new THREE.Box3(new THREE.Vector3(31, -1, -40), new THREE.Vector3(51, 10, -23)), bb = new THREE.Box3(); scene.traverse(o => { if (!o.isMesh || o.userData.noShadow) return; bb.setFromObject(o); if (!bb.intersectsBox(TB)) return; const m = o.material; if (!m || Array.isArray(m)) return;
+  const basic = m.isMeshBasicMaterial || m.isSpriteMaterial; o.receiveShadow = o.receiveShadow || (!basic && !o.userData.decals); o.castShadow = o.castShadow || (!basic && !m.transparent && m.visible !== false && !o.userData.decals); }); }
+let moon2K = 0, shadow2 = false;
+let moonK = 0, shadowTick = 0;
+function updateMoon(dt) {
+  const p = camera.position; const dx = Math.max(0, -p.x, p.x - 16), dz = Math.max(0, -p.z, p.z - 12); const near = Math.max(0, 1 - Math.hypot(dx, dz) / 4);
+  const ph = game.story && game.story.f && game.story.f.phase; const dim = (game.dark || ph === 'chase') ? 0.2 : 1; // a cloud bank rolls over the moon in the blackouts
+  const dawn = W.dawn && W.dawn.visible; nightSky.visible = !dawn; nightSky.userData.update(camera, dt); nightSky.userData.setDim(dim < 1 ? 0.15 : 1);
+  const target = dawn ? 0 : near * dim * (game.moonGain ?? 2.5); const was = moonK; moonK += (target - moonK) * Math.min(1, dt * 3); moon.intensity = moonK;
+  { const dx = Math.max(0, 33 - p.x, p.x - 49), dz = Math.max(0, -38 - p.z, p.z + 25); const nearT = Math.max(0, 1 - Math.hypot(dx, dz) / 3.5); const t2 = dawn ? 0 : nearT * dim * 2.2; moon2K += (t2 - moon2K) * Math.min(1, dt * 3); moon2.intensity = moon2K;
+    if (moon2K > 0.01 && !shadow2) { shadow2 = true; renderer.shadowMap.needsUpdate = true; } if (moon2K <= 0.01) shadow2 = false; }
+  if (moonK > 0.01) { const dyn = (W.clint.visible && W.clint.position.x < 18) || W.chris.visible || W.doors.some(d => Math.abs(d.angle - d.target) > 0.01 && d.x > -1 && d.x < 17 && d.z > -1 && d.z < 13);
+    if (was <= 0.01 || ++shadowTick >= (dyn ? 2 : 30)) { shadowTick = 0; renderer.shadowMap.needsUpdate = true; } } }
 const LIGHT_GAIN = 3.2; const POOL = 10; const pool = [];
 for (let i = 0; i < POOL; i++) { const l = new THREE.PointLight(0xffffff, 0, 10, 2); scene.add(l); pool.push(l); }
 const flash = new THREE.SpotLight(0xfff2da, 0, 22, 0.52, 0.55, 1.6); flash.position.set(0.18, -0.12, 0); camera.add(flash); camera.add(flash.target); flash.target.position.set(0, -0.15, -1);
@@ -154,7 +195,7 @@ const game = window.game = {
   W, T, scene, camera, player, sound, hud, keys, post, renderer, flash, inv: new Set(), state: 'title', time: 82720, shake: 0, flashOn: false, battery: 0.82, peeking: false, peekOff: new THREE.Vector3(), mouseR: false,
   peekHeld() { return !!(keys.KeyQ || game.mouseR); },
   cut(text, then) { const el = $('cut'); el.textContent = text || ''; el.classList.remove('hidden'); post.uniforms.glitch.value = 1; if (sound.ctx) sound.burst({ f: 3000, q: 0.3, peak: 0.25, hold: 0.25, rel: 0.1 }); setTimeout(() => { el.classList.add('hidden'); then && then(); }, 900); },
-  setView(x, z, yaw, pitch = 0, y) { player.pos.set(x, y ?? W.groundY(x, z), z); player.yaw = yaw; player.pitch = pitch; },
+  setView(x, z, yaw, pitch = 0, y) { player.pos.set(x, y ?? W.groundY(x, z), z); player.yaw = yaw; player.pitch = pitch; areaSnap = true; },
   lockPointer() { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) {} },
 };
 game.story = new Story(game);
@@ -181,13 +222,24 @@ addEventListener('mousemove', e => { if (game.state !== 'play' || document.point
 canvas.addEventListener('click', () => { if (game.state === 'play' && document.pointerLockElement !== canvas) game.lockPointer(); });
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && game.state === 'play' && !params.has('nolock')) pause(true); });
 function pause(v) { if (v) { game.state = 'pause'; $('pause').classList.remove('hidden'); } else { $('pause').classList.add('hidden'); game.state = 'play'; game.lockPointer(); } }
-$('start').onclick = () => { sound.init(); sound.loadVoices(CLINT_LINES, 'audio/clint/'); sound.loadVoices(DEE_LINES); sound.loadVoices(CHRIS_LINES, 'audio/chris/'); $('title').classList.add('hidden'); $('hud').classList.remove('hidden'); game.state = 'play'; game.lockPointer(); game.story.start(); };
+function begin(night = 1) { game.night = night; game.story.setNight(night); sound.init();
+  if (night === 2) sound.loadVoices(N2_LINES, 'audio/n2/'); else { sound.loadVoices(CLINT_LINES, 'audio/clint/'); sound.loadVoices(DEE_LINES); sound.loadVoices(CHRIS_LINES, 'audio/chris/'); }
+  try { sessionStorage.removeItem('rizzo-next'); } catch (e) {}
+  $('title').classList.add('hidden'); $('hud').classList.remove('hidden'); game.state = 'play'; game.lockPointer(); game.story.start(); }
+game.begin = begin; game.N2_LINES = N2_LINES;
+$('start').onclick = () => begin(1);
+$('night2').onclick = () => begin(2);
+// Night 2 unlocks after you finish night one (or ?n2 for testing). The end card can send you straight to it (reload, then the title offers it first).
+{ let unlocked = params.has('n2'), next = null; try { unlocked = unlocked || localStorage.getItem('rizzo-n1-done') === '1'; next = sessionStorage.getItem('rizzo-next'); } catch (e) {}
+  if (unlocked) $('night2').classList.remove('hidden');
+  if (next === '2') { $('night2').classList.remove('hidden'); $('night2').classList.add('primary'); $('start').before($('night2')); $('start').textContent = 'NIGHT 1 · CHRISTMAS EVE'; } }
+$('n2go').onclick = () => { try { sessionStorage.setItem('rizzo-auto', '2'); } catch (e) {} location.reload(); };
 $('resume').onclick = () => pause(false);
 $('restart').onclick = $('restart2').onclick = () => { $('pause').classList.add('hidden'); $('dead').classList.add('hidden'); game.story.restart(); game.state = 'play'; game.lockPointer(); };
 $('retry').onclick = () => { $('dead').classList.add('hidden'); game.story.retry(); game.state = 'play'; game.lockPointer(); };
-$('again').onclick = () => { $('end').classList.add('hidden'); game.story.restart(); game.state = 'play'; game.lockPointer(); };
+$('again').onclick = () => { try { sessionStorage.setItem('rizzo-next', '1'); } catch (e) {} $('end').classList.add('hidden'); game.story.restart(); game.state = 'play'; game.lockPointer(); };
 game.showDead = msg => { game.state = 'dead'; $('deadmsg').textContent = msg || ''; $('dead').classList.remove('hidden'); document.exitPointerLock && document.exitPointerLock(); };
-game.showEnd = html => { game.state = 'end'; $('endtxt').innerHTML = html; $('end').classList.remove('hidden'); $('hud').classList.add('hidden'); document.exitPointerLock && document.exitPointerLock(); };
+game.showEnd = (html, night = 1) => { game.state = 'end'; $('endtxt').innerHTML = html; $('tape').textContent = night === 2 ? 'END OF RECOVERED FOOTAGE — TAPE 2' : 'END OF RECOVERED FOOTAGE — TAPE 1'; $('endh').textContent = night === 2 ? 'THIRD SHIFT · NIGHT TWO' : 'THIRD SHIFT'; $('n2go').textContent = night === 2 ? 'PLAY NIGHT 2 AGAIN' : 'NIGHT 2 →'; $('again').textContent = night === 2 ? 'BACK TO NIGHT 1' : 'PLAY AGAIN'; $('end').classList.remove('hidden'); $('hud').classList.add('hidden'); document.exitPointerLock && document.exitPointerLock(); };
 
 // ---------- loop ----------
 const clock = new THREE.Clock(); let acc = 0;
@@ -198,14 +250,14 @@ function frame(dtOverride) {
     updatePlayer(dt);
     game.story.update(dt);
     updateInteract(dt);
-    $('clock').textContent = fmtTime(game.time); $('date').textContent = game.time >= 86400 ? 'DEC 25 2026' : 'DEC 24 2026';
+    $('clock').textContent = fmtTime(game.time); $('date').textContent = game.night === 2 ? (game.time >= 86400 ? 'DEC 26 2026' : 'DEC 25 2026') : (game.time >= 86400 ? 'DEC 25 2026' : 'DEC 24 2026');
     game.battery = Math.max(0.08, game.battery - dt / 5400); $('batfill').style.width = (game.battery * 100) + '%';
     $('sprintfill').style.width = (player.stamina * 100) + '%';
     if (hud.toastT > 0) { hud.toastT -= dt; if (hud.toastT <= 0) $('toast').style.opacity = 0; }
   } else if (game.state === 'shots') { camera.position.set(player.pos.x, player.pos.y + EYE, player.pos.z); camera.rotation.set(player.pitch, player.yaw, 0); $('clock').textContent = fmtTime(game.time); } else if (game.state === 'title' || game.state === 'pause') { camera.rotation.set(player.pitch, player.yaw, 0); if (game.state === 'title') { camera.position.set(player.pos.x, player.pos.y + EYE, player.pos.z); } }
   game.story.always && game.story.always(dt);
   flash.intensity = game.flashOn ? 14 * (0.92 + Math.random() * 0.03) : 0; flashFill.intensity = game.flashOn ? 0.35 : 0;
-  updateLights(dt, t); updateOutdoor();
+  updateLights(dt, t); updateOutdoor(dt); updateMoon(dt);
   sound.updateListener(camera);
   post.uniforms.time.value = t; post.uniforms.glitch.value = Math.max(0, post.uniforms.glitch.value - dt * 1.5);
   game.shake = Math.max(0, game.shake - dt * 2);
@@ -215,4 +267,8 @@ function frame(dtOverride) {
 function loop() { frame(); requestAnimationFrame(loop); }
 game.frame = frame;
 if (!params.has('shots') && !params.has('manual')) loop(); else { game.state = 'shots'; $('title').classList.add('hidden'); $('hud').classList.remove('hidden'); game.hud.tickets([]); }
+// restart / retry-from-the-start / "play night 2 again": straight back onto the dock at 10:58 PM, no title. Audio and the mouse unlock on the first click/key.
+{ let auto = null; try { auto = sessionStorage.getItem('rizzo-auto'); sessionStorage.removeItem('rizzo-auto'); } catch (e) {}
+  if (auto === '2') { begin(2); const wake = () => { sound.init(); if (sound.ctx && sound.ctx.state !== 'running') sound.ctx.resume(); removeEventListener('pointerdown', wake); removeEventListener('keydown', wake); };
+    addEventListener('pointerdown', wake); addEventListener('keydown', wake); game.autoNight = 2; } }
 window.__ready = true;

@@ -6,6 +6,7 @@
 // Then Chris, the day-shift engineering supervisor, comes in through the lot door with a flashlight, sends you home, and you walk out into the sunrise.
 import * as THREE from 'three';
 import { makeStatue } from './statue.js';
+import { Night2 } from './night2.js';
 
 const DEE = 'DEE (NIGHT AUDIT)';
 const ME = 'YOU';
@@ -26,7 +27,7 @@ const LURKS = [[52.6, -48.6], [63.5, -31.5], [56, -37], [55, -27.5], [71, -27], 
 
 export class Story {
   constructor(g) {
-    this.g = g; const W = this.W = g.W;
+    this.g = g; const W = this.W = g.W; this.night = 1; this.n2 = null;
     this.f = { clint: 0, clocked: false, radio: false, wo1: 0, wo2: 0, ballast: false, key: false, phase: 'clockin', teased: false, suiteT: 0, power: true, breaker: false, ended: false, thermo: false, rad: false, cried: false, ptac: 0,
       radioIn: false, keysIn: false, mainPower: true, mdp: 0, out: false };
     this.tickets = []; this.queue = []; this.subT = 0; this.cp = null; this.timers = []; this.cold = 0; this.puffs = []; this.puffT = 0; this.rock = { amp: 0, t: 0 }; this.peekDoor = null; this.voiceStats = { voiced: 0, fallback: 0, liveVoiced: 0, liveFallback: 0, radioAfterTurnIn: 0, clintVoiced: 0, clintFallback: 0, chrisVoiced: 0, chrisFallback: 0 }; this.smoke = []; this.smokeT = 0; this.cl = null; this.ch = null; this.cr = null; this.sunT = 0; this.lookT = 0;
@@ -42,7 +43,7 @@ export class Story {
   // ---------------- interactions ----------------
   addInteractions() {
     const W = this.W, f = this.f, g = this.g;
-    const add = o => W.interact.push(o);
+    const add = o => { const en = o.enabled; o.enabled = () => this.night !== 2 && (!en || en()); W.interact.push(o); }; // night-one interactions only
     add({ mesh: W.timeclockMesh, range: 2.2, enabled: () => !f.clocked && f.clint < 2, prompt: () => 'Time clock — let Clint finish', use: () => g.hud.toast('He\'s been here since six. Let him say his piece.', 2.5) });
     add({ mesh: W.clintPick, range: 2.4, enabled: () => f.clint === 0, prompt: () => 'Clint — chief engineer', use: () => g.hud.toast('He\'s not in the mood.', 2) });
     add({ mesh: W.timeclockMesh, range: 2.2, hold: 0.7, enabled: () => !f.clocked && f.clint >= 2, prompt: () => 'Clock in — swipe badge',
@@ -144,7 +145,9 @@ export class Story {
   setGroup(group, on, level = 1, flicker = 0) { for (const v of this.W.vlights) if (v.group === group) { v.on = on; v.level = level; v.flicker = flicker; } }
 
   // ---------------- lifecycle ----------------
+  setNight(n) { this.night = n; if (n === 2 && !this.n2) this.n2 = new Night2(this); }
   start() {
+    if (this.night === 2) { this.n2.start(); return; }
     const g = this.g, s = g.sound, W = this.W;
     g.setView(4, 6.5, Math.atan2(4 - 1.2, 6.5 - 4.75), 0.02); g.hud.tickets([]);
     this.obj('');
@@ -217,7 +220,7 @@ export class Story {
   }
   updateSmoke(dt) { for (const q of this.smoke) { if (q.life <= 0) continue; q.life -= dt; const k = 1 - q.life / q.max; q.v.multiplyScalar(1 - dt * 0.8); q.v.y += dt * 0.05; q.v.x += (Math.random() - 0.5) * dt * 0.08;
     q.s.position.addScaledVector(q.v, dt); q.s.scale.setScalar(q.s0 + k * 0.32); q.s.material.opacity = q.op * Math.pow(1 - k, 1.3) * Math.min(1, k * 8); if (q.life <= 0) q.s.visible = false; } }
-  restart() { location.reload(); }
+  restart() { if (this.night === 2) { try { sessionStorage.setItem('rizzo-auto', '2'); } catch (e) {} } location.reload(); }
 
   // ---------------- DuBose beats ----------------
   tease() { const st = this.statue; st.visible = true; st.position.copy(this.W.anchors.balcony); st.rotation.y = 0.4; this.f.teased = true; }
@@ -244,6 +247,7 @@ export class Story {
     const g = this.g, f = this.f, W = this.W, S = this.S; g.player.frozen = false; g.post.uniforms.dead.value = 0; this.dying = 0; g.shake = 0;
     this.timers = []; this.endPeek(); this.queue = []; g.hud.sub('', ''); this.subT = 0; g.sound.ctx && g.sound.stopVoice();
     this.blink.meter = 1; this.blink.lid = 0; this.blink.forced = 0; g.flashOn = true; S.bashT = 0; S._graceSet = false; S.seenEver = false;
+    if (this.cp.id.startsWith('N2')) { this.n2.retry(this.cp.id); g.cut('', null); return; }
     if (this.cp.id === 'E') { this.slamState(false); }
     else if (this.cp.id === 'G') { this.chaseState(false); }
     else if (this.cp.id === 'H') { this.clockoutState(); }
@@ -265,6 +269,8 @@ export class Story {
 
   }
   end() {
+    if (this.night === 2) { this.n2.end(); return; }
+    try { localStorage.setItem('rizzo-n1-done', '1'); } catch (e) {}
     const g = this.g; this.f.ended = true; this.S.active = false; this.endPeek(); g.post.uniforms.glitch.value = 0.6; g.sound.setMuffle && g.sound.setMuffle(20000);
     this.warm && this.warm.set(0); this.chaseSong && this.chaseSong.stop(0.3); this.heart && this.heart.stop(); this.outSong && this.outSong.stop(0.5); this.morning && this.morning.set(0.25);
     g.showEnd(`The main closed at ${this._mainTime || '6:5x AM'} on Christmas morning. The lights came up, the hum came back, and the singing stopped like somebody had shut a door on it.<br><br>
@@ -277,7 +283,7 @@ export class Story {
   // ================= Christmas-shift continuation =================
   after(sec, fn) { this.timers.push({ t: sec, fn }); }
   closeWO(id) { const g = this.g; const t = this.tickets.find(t => t.id === id); if (!t || t.done) return; t.done = true; g.hud.tickets(this.tickets); g.sound.ding(); g.hud.toast(id + '  CLOSED  · ' + this.clockStr(), 3); }
-  placeName(reg) { return ({ lobby: 'McLean · Front Desk', office: 'Engineering Shop', stairB: 'Stair B', mclean: 'McLean Hall', room117: 'McLean · Rm 117', bath117: 'McLean · Rm 117', pantry: 'McLean Hall', terrace: 'Terrace', corridor: 'Service Corridor', dock: 'Loading Dock' })[reg] || 'DuBose Home'; }
+  placeName(reg) { return ({ lobby: 'McLean · Front Desk', office: 'Engineering Shop', stairB: 'Stair B', mclean: 'McLean Hall', room117: 'McLean · Rm 117', bath117: 'McLean · Rm 117', pantry: 'McLean Hall', terrace: 'Terrace', corridor: 'Service Corridor', dock: 'Loading Dock', boiler: 'MECH 1 · Boiler Room', lot: 'Employee Lot' })[reg] || 'DuBose Home'; }
   wo117Obj() { return 'WO-4474: No heat — Room 117 (McLean hall, north side)<br>It\'s still out there. Shut doors behind you · HOLD [Q] / [RIGHT MOUSE] at a door to peek'; }
 
   // back inside McLean after the breaker: catch your breath, then Dee calls about the sewing room
@@ -796,6 +802,7 @@ export class Story {
     if (this.S.active) this.updateStatue(dt);
     if (f.phase === 'escape' && p.x < 33.7 && reg === 'mclean' && !f.ended) this.afterFirstEscape();
     this.updateHaunt(dt, reg);
+    if (this.night === 2 && this.n2) this.n2.update(dt, reg);
     if (f.phase === 'walkback' && reg === 'mclean' && p.z < -30.45) this.blackout(); // the instant you leave the lobby
     if (f.phase === 'chase' && this.ch) this.updateChase(dt, reg);
     if (f.out) this.updateLot(dt, reg);

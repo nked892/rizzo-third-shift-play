@@ -3,11 +3,15 @@
 // All geometry is procedural and original; inspired by (not copied from) reference photos of the real place.
 import * as THREE from 'three';
 import { labelTexture } from './textures.js';
+import { makeGrime, planarUV, Batch, Decals, HALL_CEIL, mergeStatic } from './gfx.js';
+import { regrime, roomDecals, flattenGroups, mergeCells } from './gfx2.js';
+import { clutter2 } from './clutter2.js';
+import { makePortrait } from './portrait.js';
 
 const TH = 0.1; // wall thickness per side
 
 export function buildWorld(scene, T) {
-  const W = { colliders: [], occluders: [], interact: [], vlights: [], doors: [], heights: [], surfaces: [], anchors: {}, groups: {}, sounds: [], scene };
+  const W = { colliders: [], occluders: [], interact: [], vlights: [], doors: [], heights: [], surfaces: [], anchors: {}, groups: {}, sounds: [], scene, rooms: [] };
 
   // ---------- materials ----------
   const L = (map, s = 1, color = 0xffffff, extra = {}) => { const m = new THREE.MeshLambertMaterial({ map, color, ...extra }); m.userData.s = s; return m; };
@@ -23,6 +27,14 @@ export function buildWorld(scene, T) {
     glass: new THREE.MeshLambertMaterial({ color: 0x223040, transparent: true, opacity: 0.35 }), nightGlass: C(0x0a0f18, { emissive: 0x05080d }),
   };
   M.glass.userData.s = 1; M.nightGlass.userData.s = 1;
+  // gfx pass 1 (dock + McLean hall): grimy procedural textures, batched clutter, decals. See gfx.js.
+  const GT = W.GT = makeGrime();
+  const GM = W.GM = { dockFloor: L(GT.dockFloor), dockWall: L(GT.dockBlock), rollup: L(GT.rollup), corr: L(GT.corrugated, 0.6), dumpster: L(GT.dumpster, 1.2), lid: C(0x16181a), card: L(GT.cardboard, 0.5),
+    pwood: L(GT.palletWood, 0.6), drum: L(GT.drum, 0.9), drumB: L(GT.drum, 0.9, 0x8a3a24), fixture: C(0x5a5e5c), bronze: C(0x2c2620), conduit: C(0x8e9294), yellow: L(GT.palletWood, 0.3, 0xd4a020), rubber: C(0x141414),
+    brick: L(T.brick, 0.9, 0x8f7c70), hallCarpet: L(GT.hallCarpet), hallCeil: L(GT.hallCeil), hallWall: L(GT.hallWall), hallWains: L(GT.hallWains), trim: L(GT.trim, 0.5), sagTile: L(GT.sagTile),
+    cartGray: C(0x2b2d30), vinyl: C(0x23324e), trashBag: C(0x0d0d0f), towel: C(0xe6e2d6), plastic: C(0xc9c3b3), steelD: C(0x6c7174), red: C(0x8a1c14), cord: C(0xd8892a), chrome: C(0xb8bcc0) };
+  const puddleMat = new THREE.MeshPhongMaterial({ map: GT.decals, color: 0x9aa4b4, specular: 0x6a7a90, shininess: 90, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 });
+  const childMark = () => scene.children.length; const childrenFrom = n => scene.children.slice(n).filter(o => o.isMesh);
 
   // ---------- geometry helpers ----------
   function boxGeo(w, h, d, s) {
@@ -71,9 +83,9 @@ export function buildWorld(scene, T) {
     deco(x + dx - 0.02, y - 0.25, z + dz - 0.02, x + dx + 0.02, y - 0.12, z + dz + 0.02, M.brass);
     if (v) v.fixtures.push(g); return g;
   }
-  function lantern(x, y, z, v, scale = 1) { // hanging glass lantern (DuBose)
+  function lantern(x, y, z, v, scale = 1, topY) { // hanging glass lantern (DuBose). topY: where the chain meets the ceiling (null = post-mounted, no chain)
     const s = scale; const g = glowMat(0xffd59a);
-    deco(x - 0.01, y + 0.35 * s, z - 0.01, x + 0.01, y + 1.2, z + 0.01, M.black);
+    if (topY !== null) { deco(x - 0.01, y + 0.35 * s, z - 0.01, x + 0.01, topY ?? (y + 1.2), z + 0.01, M.black); if (topY !== undefined) deco(x - 0.07, topY - 0.03, z - 0.07, x + 0.07, topY, z + 0.07, M.brass); } // ceiling canopy
     const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.16 * s, 0.12 * s, 0.4 * s, 8, 1, true), new THREE.MeshBasicMaterial({ color: 0x8a7a5a, transparent: true, opacity: 0.35, side: THREE.DoubleSide })); glass.position.set(x, y + 0.1 * s, z); scene.add(glass);
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.06 * s, 8, 6), g); bulb.position.set(x, y + 0.08 * s, z); scene.add(bulb);
     deco(x - 0.18 * s, y + 0.3 * s, z - 0.18 * s, x + 0.18 * s, y + 0.34 * s, z + 0.18 * s, M.brass); deco(x - 0.14 * s, y - 0.12 * s, z - 0.14 * s, x + 0.14 * s, y - 0.09 * s, z + 0.14 * s, M.brass);
@@ -117,6 +129,7 @@ export function buildWorld(scene, T) {
         if (r.casing !== false) { const cm = r.casing || M.trim; S.mk(hole[0] - 0.12, hole[0], y, ht + 0.12, cm, 0.04); S.mk(hole[1], hole[1] + 0.12, y, ht + 0.12, cm, 0.04); S.mk(hole[0] - 0.12, hole[1] + 0.12, ht, ht + 0.12, cm, 0.04); }
       }
     }
+    W.rooms.push(r);
     if (r.surface) W.surfaces.push({ x0: r.x0, x1: r.x1, z0: r.z0, z1: r.z1, s: r.surface, y });
     if (y) W.heights.push({ x0: r.x0, x1: r.x1, z0: r.z0, z1: r.z1, f: () => y });
     return r;
@@ -207,20 +220,52 @@ export function buildWorld(scene, T) {
   // =====================================================================
   // LOADING DOCK  x[0,16] z[0,12]
   // =====================================================================
-  room({ x0: 0, z0: 0, x1: 16, z1: 12, h: 5.5, floor: M.concrete, wall: M.block, base: M.hazard, casing: M.darkSteel, open: { n: [[2.4, 3.4, 2.2], [8, 10.4, 2.6]], e: [[9.8, 10.8, 2.2]] }, surface: 'concrete' });
+  const dockMark = childMark();
+  room({ x0: 0, z0: 0, x1: 16, z1: 12, h: 5.5, floor: M.concrete, wall: M.block, base: M.hazard, casing: M.darkSteel, open: { n: [[2.4, 3.4, 2.2], [8, 10.4, 2.6]], e: [[9.8, 10.8, 2.2]], w: [[10.4, 11.4, 2.2]] }, surface: 'concrete' });
+  // open-air dock yard: no roof. Grimy unique concrete slab + painted block mapped in world space (seamless across wall segments).
+  for (const m of childrenFrom(dockMark)) {
+    if (m.material === M.concrete) { m.material = GM.dockFloor; planarUV(m, (x, y, z, ax) => ax === 'y' ? [x / 16, 1 - z / 12] : [x / 16, y]); }
+    else if (m.material === M.block) { m.material = GM.dockWall; planarUV(m, (x, y, z, ax) => ax === 'x' ? [z / 4, y / 5.5] : ax === 'z' ? [x / 4, y / 5.5] : [x / 4, z / 4]); }
+  }
   W.groups.dock = [];
-  { const v1 = light(5, 4.6, 6, 0xd8e6ff, 9, { dist: 14, group: 'dock' }), v2 = light(11.5, 4.6, 4, 0xd8e6ff, 8, { dist: 14, flicker: 0.15, group: 'dock' });
-    for (const [x, z, v] of [[5, 6, v1], [11.5, 4, v2]]) { troffer(x, 4.7, z, v, 2.4); deco(x - 0.01, 4.75, z - 0.01, x + 0.01, 5.5, z + 0.01, M.black); }
+  const DB = W.dockBatch = new Batch(scene), DD = new Decals(scene, GT.decals), DP = new Decals(scene, GT.decals); DP.mat = puddleMat;
+  const bx = (x0, y0, z0, x1, y1, z1, mat, s) => { const g = new THREE.BoxGeometry(Math.abs(x1 - x0), Math.abs(y1 - y0), Math.abs(z1 - z0)); const sc = s || mat.userData.s || 1; const uv = g.attributes.uv; const w = Math.abs(x1 - x0), h = Math.abs(y1 - y0), d = Math.abs(z1 - z0); const dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]]; for (let f = 0; f < 6; f++) for (let k = 0; k < 4; k++) { const i = f * 4 + k; uv.setXY(i, uv.getX(i) * dims[f][0] / sc, uv.getY(i) * dims[f][1] / sc); } return DB.add(g, mat, new THREE.Matrix4().makeTranslation((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2)); };
+  const bxM = (w, h, d, mat, pos, rot, s) => { const g = new THREE.BoxGeometry(w, h, d); const sc = s || mat.userData.s || 1; const uv = g.attributes.uv; const dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]]; for (let f = 0; f < 6; f++) for (let k = 0; k < 4; k++) { const i = f * 4 + k; uv.setXY(i, uv.getX(i) * dims[f][0] / sc, uv.getY(i) * dims[f][1] / sc); } const m = new THREE.Matrix4().compose(new THREE.Vector3(...pos), new THREE.Quaternion().setFromEuler(new THREE.Euler(...(rot || [0, 0, 0]), 'YXZ')), new THREE.Vector3(1, 1, 1)); return DB.add(g, mat, m); };
+  const cy = (x, y, z, r, h, mat, seg = 10, r2, rot) => { const g = new THREE.CylinderGeometry(r2 ?? r, r, h, seg); const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y + h / 2, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(...(rot || [0, 0, 0]))), new THREE.Vector3(1, 1, 1)); return DB.add(g, mat, m); };
+  W.gfxHelpers = { bx, bxM, cy };
+  // ---- lights: nothing hangs from the sky any more. Two vapor-tight fixtures under a steel canopy on the building wall (cold),
+  //      a caged wall pack over the time clock and a sodium flood on the pier between the dock doors (warm). Same 'dock' group / reach as before. ----
+  { const vA = light(4.8, 3.18, 1.5, 0xd8e6ff, 5.5, { dist: 12, group: 'dock' }), v2 = light(11.5, 3.18, 1.5, 0xd8e6ff, 6.5, { dist: 14, flicker: 0.15, group: 'dock' });
+    for (const [x, v] of [[4.8, vA], [11.5, v2]]) { bx(x - 0.7, 3.27, 1.38, x + 0.7, 3.4, 1.62, GM.fixture); const lens = glowMat(0xdfe8f0); bx(x - 0.64, 3.24, 1.41, x + 0.64, 3.27, 1.59, lens); v.fixtures.push(lens); cy(x + 0.75, 3.33, 1.5, 0.02, 0.07, GM.conduit, 6); }
+    const v1 = light(8.0, 4.35, 11.2, 0xffa850, 7.5, { dist: 14, group: 'dock' }); // sodium flood on the pier between DOCK 1 and DOCK 2
+    bx(7.7, 4.45, 11.62, 8.3, 4.85, 11.9, GM.bronze); const sod = glowMat(0xffb060); bxM(0.5, 0.03, 0.26, sod, [8.0, 4.46, 11.66], [0.35, 0, 0]); v1.fixtures.push(sod); bx(7.96, 4.85, 11.84, 8.04, 5.4, 11.9, GM.conduit);
+    const vC = light(0.55, 2.7, 3.8, 0xffc27a, 3.0, { dist: 9, group: 'dock' }); // caged wall pack over the time clock
+    bx(0.1, 2.82, 3.62, 0.34, 3.12, 3.98, GM.bronze); const wp = glowMat(0xffd08a); bx(0.14, 2.79, 3.66, 0.32, 2.82, 3.94, wp); vC.fixtures.push(wp); for (let k = 0; k < 3; k++) bx(0.12, 2.74, 3.66 + k * 0.13, 0.34, 2.76, 3.68 + k * 0.13, GM.steelD);
+    bx(0.1, 2.7, 3.5, 0.14, 3.24, 4.1, GM.steelD); // backplate bolted to the block
     light(13, 2.9, 1.0, 0xffc890, 2.5, { dist: 6, group: 'dock' }); // caged bulb over the corridor door
-    const cage = glowMat(0xffd090); deco(12.9, 2.75, 0.12, 13.1, 2.95, 0.28, cage); W.vlights[W.vlights.length - 1].fixtures.push(cage); }
-  // roll-up doors + dock bumpers on south wall
-  for (const x0 of [2, 9]) { deco(x0, 0.0, 11.86, x0 + 5, 4.0, 11.9, M.rollup); deco(x0 - 0.15, 0, 11.8, x0, 4.2, 11.9, M.yellow); deco(x0 + 5, 0, 11.8, x0 + 5.15, 4.2, 11.9, M.yellow); deco(x0 - 0.1, 4.0, 11.6, x0 + 5.1, 4.4, 11.9, M.darkSteel);
-    deco(x0 + 0.6, 1.0, 11.6, x0 + 1.0, 1.4, 11.9, M.black); deco(x0 + 4.0, 1.0, 11.6, x0 + 4.4, 1.4, 11.9, M.black); deco(x0 + 1.5, 0, 9.8, x0 + 3.5, 0.03, 11.8, M.plate); }
+    const cage = glowMat(0xffd090); deco(12.9, 2.75, 0.12, 13.1, 2.95, 0.28, cage); W.vlights[W.vlights.length - 1].fixtures.push(cage);
+    for (let k = 0; k < 4; k++) bx(12.88 + k * 0.08, 2.72, 0.1, 12.9 + k * 0.08, 2.98, 0.3, GM.steelD); }
+  // ---- steel canopy along the building wall (corrugated deck, fascia, tension rods back to the wall) ----
+  bx(0.12, 3.4, 0.1, 15.88, 3.47, 2.5, GM.corr); bx(0.12, 3.24, 2.42, 15.88, 3.56, 2.5, C(0x3a3f3c)); bx(0.12, 3.24, 0.1, 0.18, 3.47, 2.5, C(0x3a3f3c)); bx(15.82, 3.24, 0.1, 15.88, 3.47, 2.5, C(0x3a3f3c));
+  for (const x of [0.6, 4.0, 7.6, 11.0, 15.3]) { const a = Math.atan2(2.3, 1.55); bxM(0.035, Math.hypot(2.3, 1.55), 0.035, GM.steelD, [x, 4.27, 1.3], [a, 0, 0]); bx(x - 0.08, 4.95, 0.1, x + 0.08, 5.15, 0.14, GM.steelD); }
+  // gutter + downspout at the east end (rust streak under it)
+  bx(0.12, 3.47, 2.44, 15.88, 3.6, 2.56, GM.steelD); cy(15.7, 0.05, 2.62, 0.05, 3.5, GM.steelD, 6); bx(15.6, 0, 2.5, 15.82, 0.08, 2.9, GM.steelD);
+  // ---- the building above the canopy: brick up to 7.5 m, coping, two upstairs windows (one faintly lit behind a blind) ----
+  { const bk = box(-0.1, 5.5, -0.3, 16.1, 7.5, 0.1, GM.brick, { solid: false, occ: false }); planarUV(bk, (x, y, z, ax) => ax === 'x' ? [z / 0.9, y / 0.9] : [x / 0.9, y / 0.9]);
+    bx(-0.15, 7.5, -0.35, 16.15, 7.62, 0.22, M.darkSteel);
+    for (const [x, lit] of [[4.2, false], [11.8, true]]) { bx(x - 0.65, 5.75, 0.1, x + 0.65, 7.0, 0.13, M.trim); const gm = lit ? glowMat(0x2c2214) : M.nightGlass; bx(x - 0.55, 5.85, 0.13, x + 0.55, 6.9, 0.135, gm);
+      if (lit) { for (let k = 0; k < 9; k++) bx(x - 0.55, 6.85 - k * 0.1, 0.136, x + 0.55, 6.83 - k * 0.1, 0.14, C(0x2a2014)); } bx(x - 0.7, 5.7, 0.1, x + 0.7, 5.77, 0.2, M.trim); } }
+  // copings on the yard walls
+  bx(-0.04, 5.5, 0, 0.14, 5.58, 12, M.darkSteel); bx(0, 5.5, 11.86, 16, 5.58, 12.04, M.darkSteel);
+  // roll-up doors + dock bumpers on south wall (rusty slats now)
+  for (const x0 of [2, 9]) { const ru = deco(x0, 0.0, 11.86, x0 + 5, 4.0, 11.9, GM.rollup); planarUV(ru, (x, y) => [(x - x0) / 5, y / 4]); deco(x0 - 0.15, 0, 11.8, x0, 4.2, 11.9, M.yellow); deco(x0 + 5, 0, 11.8, x0 + 5.15, 4.2, 11.9, M.yellow); deco(x0 - 0.1, 4.0, 11.6, x0 + 5.1, 4.4, 11.9, M.darkSteel);
+    deco(x0 + 0.6, 1.0, 11.6, x0 + 1.0, 1.4, 11.9, M.black); deco(x0 + 4.0, 1.0, 11.6, x0 + 4.4, 1.4, 11.9, M.black); deco(x0 + 1.5, 0, 9.8, x0 + 3.5, 0.03, 11.8, M.plate);
+    DD.add(x0 + 2.5, 2.2, 11.86, 's', 5.2, 4.4, 9, 0, x0 > 5); DD.add(x0 - 0.08, 0.6, 11.79, 's', 0.6, 1.2, 12); }
   W.anchors.rollup = new THREE.Vector3(9, 2, 11.8);
   label(4.5, 4.6, 11.85, 2.6, 0.4, ['DOCK 1'], { w: 256, h: 40, size: 30, bg: '#1d1b17', fg: '#d9b23a', bold: true }, Math.PI);
   label(11.5, 4.6, 11.85, 2.6, 0.4, ['DOCK 2'], { w: 256, h: 40, size: 30, bg: '#1d1b17', fg: '#d9b23a', bold: true }, Math.PI);
   // bollards
-  for (const x of [1.6, 7.6, 8.6, 14.6]) { const b = cyl(x, 0, 10.8, 0.11, 1.1, M.yellow, { solid: true }); }
+  for (const x of [1.6, 7.6, 8.6, 14.6]) { const b = cyl(x, 0, 10.8, 0.11, 1.1, M.yellow, { solid: true }); DD.add(x, 0.004, 10.8, 'up', 0.5, 0.5, 13); }
   // time clock on west wall + badge rack + bulletin board
   { const x = 0.1; deco(x, 1.15, 3.55, x + 0.16, 1.65, 4.05, M.darkSteel); W.anchors.timeclock = new THREE.Vector3(0.3, 1.4, 3.8);
     const scr = glowMat(0x7fd18c); deco(x + 0.161, 1.45, 3.65, x + 0.165, 1.58, 3.95, scr);
@@ -230,20 +275,90 @@ export function buildWorld(scene, T) {
     label(x + 0.03, 2.1, 3.8, 1.2, 0.4, ['CLOCK IN / OUT', 'ALL HOURLY STAFF'], { w: 256, h: 80, size: 22, bg: '#efe9d6', fg: '#8a1c14', bold: true }, Math.PI / 2);
     deco(x, 1.3, 5.6, x + 0.05, 2.3, 7.4, L(T.ceilTile, 1, 0xa08060));
     label(x + 0.06, 1.95, 6.0, 0.35, 0.45, ['SAFETY', 'FIRST', '', '___'], { w: 128, h: 160, size: 18, bg: '#f0f0e8', fg: '#222' }, Math.PI / 2);
-    label(x + 0.06, 1.7, 6.9, 0.4, 0.5, ['3RD SHIFT', 'ENG ON CALL', 'x4411'], { w: 128, h: 160, size: 18, bg: '#f4e9a0', fg: '#222' }, Math.PI / 2); }
-  // pallets, boxes, linen cart, trash
-  function pallet(x, z, stack = 0) { solidDeco(x - 0.6, 0, z - 0.5, x + 0.6, 0.15, z + 0.5, M.wood); for (let i = 0; i < stack; i++) { const s = 0.3 + Math.random() * 0.15; solidDeco(x - 0.55 + (i % 2) * 0.55, 0.15 + Math.floor(i / 2) * 0.45, z - 0.45, x - 0.05 + (i % 2) * 0.55, 0.15 + Math.floor(i / 2) * 0.45 + s + 0.1, z + 0.45, M.beige); } }
-  pallet(13.8, 8.5, 4); pallet(13.8, 6.6, 2); pallet(2.2, 9.6, 3);
-  { // linen cart
-    solidDeco(5.5, 0.2, 2.2, 6.9, 1.2, 3.0, M.beige); deco(5.5, 1.2, 2.2, 6.9, 1.4, 3.0, M.cloth); for (const [a, b] of [[5.55, 2.25], [6.8, 2.25], [5.55, 2.9], [6.8, 2.9]]) deco(a, 0, b, a + 0.05, 0.2, b + 0.05, M.black); }
+    label(x + 0.06, 1.7, 6.9, 0.4, 0.5, ['3RD SHIFT', 'ENG ON CALL', 'x4411'], { w: 128, h: 160, size: 18, bg: '#f4e9a0', fg: '#222' }, Math.PI / 2);
+    label(x + 0.06, 1.75, 2.75, 0.32, 0.22, ['NO', 'SMOKING'], { w: 128, h: 96, size: 26, bg: '#e8e2d0', fg: '#a01810', bold: true }, Math.PI / 2); }
+  // ---- clutter (chunky low-poly, batched per material; colliders only where you'd actually bump into it) ----
+  const col = (x0, x1, z0, z1, y1 = 1.2) => W.colliders.push({ x0, x1, z0, z1, y0: 0, y1 });
+  function pallet(x, z, stack = 0, seedK = 0) { // slatted pallet + stacked cartons (same footprints/colliders as before)
+    for (let k = 0; k < 7; k++) bx(x - 0.6, 0.12, z - 0.5 + k * 0.155, x + 0.6, 0.15, z - 0.5 + k * 0.155 + 0.1, GM.pwood);
+    for (const zz of [-0.5, -0.05, 0.4]) bx(x - 0.6, 0.0, z + zz, x + 0.6, 0.12, z + zz + 0.1, GM.pwood);
+    W.colliders.push({ x0: x - 0.6, x1: x + 0.6, y0: 0, y1: 0.15, z0: z - 0.5, z1: z + 0.5 });
+    for (let i = 0; i < stack; i++) { const s = 0.3 + ((i * 37 + seedK * 11) % 10) / 10 * 0.15; const x0 = x - 0.55 + (i % 2) * 0.55, y0 = 0.15 + Math.floor(i / 2) * 0.45, x1 = x - 0.05 + (i % 2) * 0.55, y1 = y0 + s + 0.1;
+      const jog = ((i * 13 + seedK) % 5 - 2) * 0.02; bxM(x1 - x0 - 0.02, y1 - y0, 0.88, GM.card, [(x0 + x1) / 2 + jog, (y0 + y1) / 2, z + jog], [0, jog * 2, 0]);
+      W.colliders.push({ x0, x1, y0, y1, z0: z - 0.45, z1: z + 0.45 }); }
+    DD.add(x, 0.004, z, 'up', 1.7, 1.5, 13); }
+  pallet(13.8, 8.5, 4, 1); pallet(13.8, 6.6, 2, 2); pallet(2.2, 9.6, 3, 3);
+  { // linen cart: open-top canvas sling bag hanging in a steel frame (sides sag, bottom bellies), casters, a heap of used towels spilling over, one on the floor
+    const x0 = 5.5, x1 = 6.9, z0 = 2.2, z1 = 3.0, cv = L(GT.cardboard, 0.4, 0xc8b89a), cvD = L(GT.cardboard, 0.4, 0x8a7c62);
+    for (const [a, b] of [[x0, z0], [x1 - 0.04, z0], [x0, z1 - 0.04], [x1 - 0.04, z1 - 0.04]]) { bx(a, 0.12, b, a + 0.04, 1.2, b + 0.04, GM.steelD); cy(a + 0.02, 0, b + 0.02, 0.06, 0.12, GM.rubber, 8, undefined, [Math.PI / 2, 0, 0]); }
+    for (const z of [z0, z1 - 0.04]) bx(x0, 1.15, z, x1, 1.2, z + 0.04, GM.steelD); for (const x of [x0, x1 - 0.04]) bx(x, 1.15, z0, x + 0.04, 1.2, z1, GM.steelD); bx(x0, 0.12, z0, x1, 0.15, z0 + 0.03, GM.steelD); bx(x0, 0.12, z1 - 0.03, x1, 0.15, z1, GM.steelD);
+    // sling: four canvas walls bowed inward (two slanted panels each) + a sagging bottom, hems wrapped over the top rails
+    const pan = (w, h, pos, rot, m) => bxM(w, h, 0.015, m, pos, rot);
+    for (const [zz, sg] of [[z0 + 0.03, 1], [z1 - 0.03, -1]]) { pan(1.32, 0.5, [6.2, 0.92, zz + sg * 0.035], [sg * 0.14, 0, 0], cv); pan(1.24, 0.42, [6.2, 0.47, zz + sg * 0.045], [-sg * 0.2, 0, 0], cvD); }
+    for (const [xx, sg] of [[x0 + 0.03, 1], [x1 - 0.03, -1]]) { bxM(0.015, 0.5, 0.72, cv, [xx + sg * 0.035, 0.92, 2.6], [0, 0, -sg * 0.14]); bxM(0.015, 0.42, 0.64, cvD, [xx + sg * 0.045, 0.47, 2.6], [0, 0, sg * 0.2]); }
+    bxM(1.2, 0.03, 0.6, cvD, [6.2, 0.27, 2.6], [0, 0, 0]); for (const z of [z0 + 0.02, z1 - 0.02]) bx(x0, 1.12, z - 0.012, x1, 1.22, z + 0.012, cv);
+    const dirty = C(0xcfc8b6); for (let k = 0; k < 11; k++) bxM(0.36 + (k % 3) * 0.05, 0.12, 0.3, k % 4 === 3 ? dirty : GM.towel, [x0 + 0.24 + (k % 4) * 0.3 + (k > 7 ? 0.1 : 0), 1.14 + Math.floor(k / 4) * 0.1, z0 + 0.22 + (k % 2) * 0.32], [0.2 * ((k % 3) - 1), k * 0.7, 0.18 * (k % 3 - 1)]);
+    bxM(0.06, 0.5, 0.34, GM.towel, [x1 + 0.03, 0.98, 2.5], [0, 0, 0.12]); bxM(0.44, 0.03, 0.36, dirty, [6.95, 0.015, 3.35], [0, 0.6, 0]); // one draped over the rail, one on the ground
+    W.colliders.push({ x0, x1, y0: 0.2, y1: 1.2, z0, z1 }); DD.add(6.2, 0.004, 2.6, 'up', 1.8, 1.2, 13); }
   { // trash toters + compactor panel
-    cyl(15.2, 0, 1.2, 0.38, 1.05, L(T.concrete, 1, 0x2d4a2d), { solid: true }); cyl(15.2, 0, 2.1, 0.38, 1.05, L(T.concrete, 1, 0x2d4a2d), { solid: true });
+    const tot = L(GT.dumpster, 0.8, 0x6a8a6a); cyl(15.2, 0, 1.2, 0.38, 1.05, tot, { solid: true }); cyl(15.2, 0, 2.1, 0.38, 1.05, tot, { solid: true });
+    for (const z of [1.2, 2.1]) { cy(15.2, 1.05, z, 0.41, 0.06, GM.lid, 12); DD.add(15.2, 0.004, z, 'up', 1.1, 1.1, 13); }
     deco(15.85, 1.2, 4.5, 15.9, 1.9, 5.1, M.darkSteel); label(15.84, 1.75, 4.8, 0.5, 0.15, ['COMPACTOR'], { w: 128, h: 32, size: 16, bg: '#333', fg: '#eee' }, -Math.PI / 2); }
-  // pipes on ceiling
-  deco(0, 5.0, 0.4, 16, 5.15, 0.55, M.steel); deco(0, 4.8, 0.7, 16, 4.88, 0.78, L(T.concrete, 1, 0x8a2a1a));
+  { // dumpster in the southwest corner (lid propped, stencil, grime puddle)
+    const x0 = 0.18, x1 = 1.38, z0 = 7.95, z1 = 10.05; bx(x0 + 0.04, 0.16, z0, x1, 1.22, z1, GM.dumpster); bx(x0, 1.1, z0 - 0.04, x1 + 0.04, 1.22, z1 + 0.04, GM.dumpster, 0.4);
+    bxM(1.25, 0.05, 1.04, GM.lid, [0.8, 1.27, 8.5], [0, 0, 0]); bxM(0.05, 1.2, 1.04, GM.lid, [0.3, 1.86, 9.53], [0, 0, 0.1]); // one lid shut, one flipped up against the wall
+    for (const z of [8.1, 9.9]) for (const x of [0.35, 1.2]) cy(x, 0.0, z, 0.08, 0.16, GM.rubber, 8);
+    bx(x1, 0.5, 8.3, x1 + 0.08, 0.62, 9.7, GM.steelD); // fork pocket rail
+    col(x0 - 0.05, x1 + 0.1, z0 - 0.06, z1 + 0.06, 1.3); DD.add(1.6, 0.004, 9.0, 'up', 2.0, 2.6, 11); DD.add(0.8, 0.004, 9.0, 'up', 1.8, 2.6, 13); }
+  { // steel drums by the compactor (one rusted through)
+    for (const [x, z, m] of [[15.35, 5.75, GM.drum], [15.4, 6.45, GM.drumB], [14.78, 6.05, GM.drum]]) { cy(x, 0, z, 0.29, 0.88, m, 12); cy(x, 0.88, z, 0.29, 0.02, GM.steelD, 12); cy(x, 0.28, z, 0.295, 0.03, GM.steelD, 12); cy(x, 0.6, z, 0.295, 0.03, GM.steelD, 12); col(x - 0.29, x + 0.29, z - 0.29, z + 0.29, 0.9); DD.add(x, 0.004, z, 'up', 0.9, 0.9, 13); }
+    DD.add(15.1, 0.004, 6.3, 'up', 1.6, 1.4, 5); }
+  { // baled cardboard by the toters
+    bxM(0.8, 1.0, 1.05, GM.card, [15.42, 0.5, 3.35], [0, 0.04, 0], 0.35); for (const z of [3.05, 3.65]) bxM(0.82, 1.02, 0.03, GM.rubber, [15.42, 0.5, z], [0, 0.04, 0]); col(14.98, 15.86, 2.78, 3.92, 1.0); DD.add(15.3, 0.004, 3.35, 'up', 1.2, 1.4, 13); }
+  { // wire cage cart, full of bagged linen, parked by the corridor door
+    const x0 = 11.05, x1 = 12.1, z0 = 0.25, z1 = 1.05; for (let k = 0; k <= 6; k++) { const x = x0 + (x1 - x0) * k / 6; bx(x - 0.01, 0.15, z1 - 0.02, x + 0.01, 1.65, z1, GM.chrome); bx(x - 0.01, 0.15, z0, x + 0.01, 1.65, z0 + 0.02, GM.chrome); }
+    for (let k = 0; k <= 4; k++) { const z = z0 + (z1 - z0) * k / 4; bx(x0, 0.15, z - 0.01, x0 + 0.02, 1.65, z + 0.01, GM.chrome); bx(x1 - 0.02, 0.15, z - 0.01, x1, 1.65, z + 0.01, GM.chrome); }
+    for (const y of [0.15, 0.85, 1.63]) { bx(x0, y, z0, x1, y + 0.02, z0 + 0.02, GM.chrome); bx(x0, y, z1 - 0.02, x1, y + 0.02, z1, GM.chrome); bx(x0, y, z0, x0 + 0.02, y + 0.02, z1, GM.chrome); bx(x1 - 0.02, y, z0, x1, y + 0.02, z1, GM.chrome); }
+    bx(x0, 0.15, z0, x1, 0.17, z1, GM.steelD); for (let k = 0; k < 5; k++) bxM(0.42, 0.36, 0.34, k % 2 ? GM.towel : C(0xb9c2cc), [x0 + 0.27 + (k % 2) * 0.48, 0.36 + Math.floor(k / 2) * 0.38, 0.65 + ((k * 7) % 3 - 1) * 0.1], [0, k, 0.2]);
+    for (const [a, b] of [[x0 + 0.05, z0 + 0.05], [x1 - 0.05, z0 + 0.05], [x0 + 0.05, z1 - 0.05], [x1 - 0.05, z1 - 0.05]]) cy(a, 0, b, 0.06, 0.15, GM.rubber, 8);
+    col(x0, x1, z0, z1, 1.65); DD.add(11.6, 0.004, 0.7, 'up', 1.5, 1.2, 13); }
+  { // loose cartons, flattened boxes against the wall
+    bxM(0.6, 0.42, 0.45, GM.card, [12.75, 0.21, 0.42], [0, 0.15, 0]); bxM(0.5, 0.36, 0.4, GM.card, [12.8, 0.6, 0.45], [0, -0.2, 0]); bxM(0.04, 1.1, 0.9, GM.card, [13.4, 0.55, 0.62], [0, 0, -0.18]); DD.add(12.9, 0.004, 0.55, 'up', 1.2, 1.0, 13); }
+  { // mop bucket + wringer + mop, wet patch
+    const x = 4.6, z = 0.5; bx(x - 0.22, 0.04, z - 0.17, x + 0.22, 0.36, z + 0.17, GM.yellow); bx(x - 0.2, 0.36, z - 0.06, x + 0.2, 0.5, z + 0.06, GM.steelD); for (const [a, b] of [[-0.18, -0.14], [0.18, -0.14], [-0.18, 0.14], [0.18, 0.14]]) cy(x + a, 0, z + b, 0.03, 0.04, GM.rubber, 6);
+    cy(x + 0.05, 0.25, z, 0.014, 1.35, GM.pwood, 6, undefined, [0.12, 0, -0.1]); bxM(0.2, 0.12, 0.12, GM.towel, [x - 0.02, 0.34, z - 0.01], [0, 0, 0]);
+    DP.add(x + 0.3, 0.003, z + 0.45, 'up', 1.3, 1.0, 11, 0.6); DD.add(x, 0.004, z, 'up', 0.7, 0.6, 13); }
+  { // sand-top ash urn by the time clock (Clint's), butts everywhere around it
+    cy(0.45, 0, 2.95, 0.13, 0.8, GM.steelD, 10, 0.11); cy(0.45, 0.8, 2.95, 0.11, 0.06, C(0xb8ab88), 10); DD.add(0.9, 0.004, 3.6, 'up', 1.4, 1.4, 10, 0.3); DD.add(1.5, 0.004, 4.9, 'up', 1.0, 1.0, 10, 1.9); DD.add(0.45, 0.004, 2.95, 'up', 0.5, 0.5, 13); }
+  { // cones (one knocked over), wheel chock, a leaning broken pallet
+    const cone = C(0xd2581c), band = C(0xd8d8d0);
+    const coneAt = (x, z, rx = 0, rz = 0, y = 0) => { cy(x, y, z, 0.17, 0.03, GM.rubber, 4, 0.17, [rx, 0, rz]); const c = new THREE.ConeGeometry(0.14, 0.62, 10); DB.add(c, cone, new THREE.Matrix4().compose(new THREE.Vector3(x, y + 0.34, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, 0, rz)), new THREE.Vector3(1, 1, 1))); };
+    coneAt(8.1, 10.15); { const c = new THREE.ConeGeometry(0.14, 0.62, 10); DB.add(c, cone, new THREE.Matrix4().compose(new THREE.Vector3(6.4, 0.14, 10.9), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0.6, Math.PI / 2)), new THREE.Vector3(1, 1, 1))); }
+    bxM(0.18, 0.12, 0.28, C(0x2a2a2a), [10.6, 0.06, 10.4], [0, 0.3, 0]);
+    for (let k = 0; k < 5; k++) bxM(0.1, 1.2, 0.025, GM.pwood, [7.35 + k * 0.32, 0.6, 11.72], [-0.18, 0, k === 3 ? 0.25 : 0]); for (const y of [0.15, 1.0]) bxM(1.45, 0.1, 0.08, GM.pwood, [8.0, y, 11.62 + y * 0.18], [-0.18, 0, 0]); }
+  { // wall junk: hose reel, conduit + junction boxes, extinguisher, a dead phone box, an old calendar-free bulletin board
+    const w = 0.1; bx(6.2, 0.9, w, 6.8, 1.5, w + 0.08, GM.steelD); cy(6.5, 1.2, w + 0.2, 0.25, 0.22, C(0x2a5a30), 14, undefined, [Math.PI / 2, 0, 0]); cy(6.5, 1.2, w + 0.2, 0.12, 0.24, GM.steelD, 10, undefined, [Math.PI / 2, 0, 0]);
+    bx(7.25, 0.4, w, 7.31, 5.45, w + 0.05, GM.conduit); bx(7.12, 1.3, w, 7.44, 1.62, w + 0.1, GM.steelD); bx(7.12, 3.0, w, 7.44, 3.25, w + 0.09, GM.steelD); bx(7.31, 1.45, w, 7.9, 1.5, w + 0.04, GM.conduit);
+    cy(7.75, 0.75, w + 0.12, 0.08, 0.42, GM.red, 10); bx(7.66, 1.17, w, 7.84, 1.3, w + 0.03, GM.steelD); bx(7.6, 1.42, w, 7.9, 1.62, w + 0.01, C(0xc81e14));
+    bx(5.2, 1.3, w, 5.5, 1.75, w + 0.12, C(0x7a7a6a)); bx(5.25, 1.55, w + 0.12, 5.45, 1.7, w + 0.13, GM.rubber); }
+  // pipes: up on the building wall, on brackets (no more floating)
+  bx(0, 5.0, 0.12, 16, 5.15, 0.27, M.steel); bx(0, 4.75, 0.12, 16, 4.83, 0.2, L(T.concrete, 1, 0x8a2a1a)); for (let x = 0.8; x < 16; x += 2.2) bx(x, 4.7, 0.1, x + 0.06, 5.2, 0.3, GM.steelD);
   label(9.2, 2.85, 0.12, 2.0, 0.3, ['ENGINEERING  ·  McLEAN HALL  →'], { w: 512, h: 64, size: 30, bg: '#1d2a44', fg: '#e8e4d8' }, 0);
   label(2.9, 2.4, 0.12, 1.1, 0.22, ['MAINTENANCE'], { w: 256, h: 48, size: 28, bg: '#1d2a44', fg: '#e8e4d8', bold: true }, 0);
   W.surfaces.push({ x0: 0, x1: 16, z0: 0, z1: 12, s: 'concrete' });
+  // ---- decals: contact shadows along every wall base, leak/rust streaks off the copings and anchors, oil, skids, butts, puddles ----
+  DD.wallBase(0.1, 0, 2.28, 0, 'n', 0, 0.4, 0.35); DD.wallBase(3.52, 0, 7.88, 0, 'n', 0, 0.4, 0.35); DD.wallBase(10.52, 0, 15.9, 0, 'n', 0, 0.4, 0.35);
+  DD.wallBase(0, 0.1, 0, 10.28, 'w', 0, 0.45, 0.4); DD.wallBase(0, 11.52, 0, 11.9, 'w', 0, 0.45, 0.4); DD.wallBase(0, 12, 16, 12, 's', 0, 0.45, 0.4); DD.wallBase(16, 0.1, 16, 9.68, 'e', 0, 0.45, 0.4); DD.wallBase(16, 10.92, 16, 11.9, 'e', 0, 0.45, 0.4);
+  for (const [x, w] of [[1.0, 0.8], [5.6, 1.0], [12.2, 0.9], [14.8, 0.7]]) DD.add(x, 4.8, 11.9, 's', w, 1.4, 1); for (const z of [1.5, 6.4, 10.9]) DD.add(0.1, 4.7, z, 'w', 1.0, 1.6, 1); for (const z of [2.0, 6.9]) DD.add(15.9, 4.7, z, 'e', 1.0, 1.6, 1);
+  DD.add(0.1, 2.3, 3.8, 'w', 0.5, 0.9, 9); DD.add(8.0, 3.9, 11.9, 's', 0.6, 1.1, 9); for (const x of [0.6, 4.0, 7.6, 11.0, 15.3]) DD.add(x, 4.6, 0.1, 'n', 0.4, 0.8, 9);
+  DD.add(15.75, 1.6, 2.4, 'n', 0.5, 2.0, 9); DD.add(15.55, 0.004, 2.9, 'up', 0.9, 0.8, 11);
+  for (const [x, z, w, r] of [[3.9, 10.6, 1.4, 0.4], [10.6, 10.9, 1.2, 2.1], [12.3, 9.8, 1.0, 1.0], [6.8, 8.6, 0.9, 0.3], [9.4, 4.8, 0.8, 2.6], [2.9, 7.4, 0.7, 1.2]]) DD.add(x, 0.004, z, 'up', w, w, 5, r);
+  for (const [x, z, r] of [[4.5, 9.4, 0.15], [11.4, 9.2, -0.2], [13.0, 6.2, 0.6]]) DD.add(x, 0.004, z, 'up', 1.4, 3.0, 6, r);
+  for (const [x, z, r] of [[5.8, 4.4, 0.4], [10.2, 7.4, 1.4], [3.1, 2.9, 2.2]]) DD.add(x, 0.004, z, 'up', 2.4, 2.4, 7, r);
+  DD.add(9.6, 0.004, 3.6, 'up', 0.25, 0.3, 14, 0.7); DD.add(2.4, 0.004, 5.9, 'up', 0.22, 0.27, 14, 2.0);
+  for (const [x, z, w, r] of [[8.3, 6.4, 2.2, 0.5], [5.3, 11.0, 1.8, 1.7], [11.9, 11.2, 1.5, 2.9], [14.2, 10.2, 1.0, 0.2]]) DP.add(x, 0.003, z, 'up', w, w * 0.7, 11, r);
+  DD.add(0.1, 0.5, 6.5, 'w', 2.2, 1.0, 12); DD.add(15.9, 0.5, 6.0, 'e', 2.6, 1.0, 12); DD.add(0.1, 4.9, 11.6, 'w', 0.8, 0.8, 4, 0); DD.add(15.9, 4.9, 0.4, 'e', 0.8, 0.8, 4, Math.PI);
+  W.dockDecals = [DD.flush(), DP.flush()]; W.dockBatched = DB.flush({ name: 'dockClutter' });
   // ---- employee lot door (east wall): Clint's way out at 10:58. Steel man door, locked for you all night. ----
   W.doors.lotDoor = door(15.95, 10.3, 'z', 1.0, { swing: 1, mat: L(T.concrete, 1, 0x56606a), locked: true, name: 'lot', lockedMsg: 'Employee lot. You\'re on till seven.' });
   label(15.84, 2.45, 10.3, 0.9, 0.2, ['EXIT · EMPLOYEE LOT'], { w: 256, h: 56, size: 24, bg: '#7a1410', fg: '#f2efe6', bold: true }, -Math.PI / 2);
@@ -263,7 +378,7 @@ export function buildWorld(scene, T) {
     for (let x = 19; x < lotX1 + 4; x += 3.4) { for (const y of [2.0, 5.0]) { deco(x - 0.6, y - 0.75, -0.06, x + 0.6, y + 0.75, -0.02, M.nightGlass); deco(x - 0.68, y - 0.83, -0.08, x + 0.68, y - 0.75, 0.0, M.trim); } }
     box(15.9, 5.5, 0, 16.1, 6.1, 12, M.block, { solid: false }); deco(16.1, 5.9, 0, 16.3, 6.1, 12, M.darkSteel);
     for (const x0 of [2, 9]) { deco(x0, 0, 12.02, x0 + 5, 4.0, 12.06, M.rollup); deco(x0 - 0.15, 0, 12.0, x0, 4.2, 12.1, M.yellow); deco(x0 + 5, 0, 12.0, x0 + 5.15, 4.2, 12.1, M.yellow); deco(x0 + 0.5, 0, 12.06, x0 + 1.0, 1.3, 12.5, M.black); deco(x0 + 4.0, 0, 12.06, x0 + 4.5, 1.3, 12.5, M.black); }
-    box(-0.2, 5.5, 0, 16.1, 5.6, 12.1, M.darkSteel, { solid: false });
+    // (the dock has no roof any more: it's an open-air yard under the night sky; see the canopy + copings above)
     deco(16.0, 2.35, 9.7, 16.05, 2.75, 10.9, M.darkSteel); label(16.07, 2.55, 10.3, 0.9, 0.2, ['EMPLOYEE ENTRANCE · BADGE REQUIRED'], { w: 384, h: 56, size: 20, bg: '#1d2a44', fg: '#e8e4d8', bold: true }, Math.PI / 2);
     deco(16.05, 1.0, 10.95, 16.12, 1.25, 11.1, M.darkSteel); deco(16.12, 1.12, 10.98, 16.13, 1.2, 11.07, glowMat(0xd23a2a)); // badge reader
     // curbs + a sidewalk along the building, then the stalls
@@ -304,7 +419,7 @@ export function buildWorld(scene, T) {
     for (let x = 18; x < 60; x += 14) { cyl(x, 0, lotZ1 + 2.2, 0.12, 9, C(0x3a2c20)); deco(x - 1.2, 8.4, lotZ1 + 2.15, x + 1.2, 8.5, lotZ1 + 2.25, C(0x3a2c20)); }
     { const wire = new THREE.MeshBasicMaterial({ color: 0x15161a }); for (const y of [8.2, 8.45]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 42, 3), wire); w.rotation.z = Math.PI / 2; w.position.set(39, y, lotZ1 + 2.2); scene.add(w); } }
     // sodium light just over the lot door (on the dock circuit)
-    light(17.3, 3.0, 10.3, 0xffa860, 2.6, { dist: 6, group: 'dock' }); const sod = glowMat(0xffb060); deco(17.1, 3.05, 10.15, 17.5, 3.15, 10.45, sod); W.vlights[W.vlights.length - 1].fixtures.push(sod);
+    light(17.3, 3.0, 10.3, 0xffa860, 2.6, { dist: 6, group: 'dock' }); const sod = glowMat(0xffb060); deco(17.1, 3.05, 10.15, 17.5, 3.15, 10.45, sod); W.vlights[W.vlights.length - 1].fixtures.push(sod); deco(16.1, 3.12, 10.27, 17.15, 3.17, 10.33, M.darkSteel); deco(16.1, 2.95, 10.2, 16.16, 3.3, 10.4, M.darkSteel); // wall arm
     W.anchors.lot = new THREE.Vector3(17.6, 0, 10.3);
     // 7 AM: cold gray daylight spilling in when the lot door opens (off until then)
     W.dawnSpill = light(17.6, 2.2, 10.3, 0xa8b4c8, 2.2, { dist: 7, on: false, group: 'dawn' });
@@ -503,17 +618,66 @@ export function buildWorld(scene, T) {
   // =====================================================================
   // McLEAN HALL guest corridor x[-6,34] z[-33,-30]
   // =====================================================================
+  const hallMark = childMark();
   room({ x0: -6, z0: -33, x1: 34, z1: -30, h: 2.8, floor: M.carpetHall, ceil: M.white, wall: M.cream, wains: M.wains, crown: true, open: { s: [[0.3, 2.7, 2.4], [8.6, 9.8, 2.2], [14.5, 17.5, 2.4]], e: [[-32.1, -30.9, 2.3]], n: [[23.52, 24.48, 2.2]] }, surface: 'carpet' });
   W.doors.terraceDoor = door(33.95, -31.5, 'z', 1.2, { swing: -1, mat: M.glass, name: 'terraceMcLean', breakable: true });
   for (const x of [-3, 1, 5, 12, 20, 28, 31.5]) fakeDoor(x, -32.9, 'n', 100 + Math.round((x + 6) / 4) * 2 + 1);
   for (const x of [12, 21, 25, 29]) fakeDoor(x, -30.1, 's', 100 + Math.round((x + 6) / 4) * 2); // west end of the south wall opens into the lobby (below)
-  for (const x of [-1, 8, 18, 26]) { const v = light(x + 1, 2.0, -31.5, 0xffc98a, 2.2, { dist: 8, group: 'mclean' }); sconce(x, 1.9, -32.9, 'n', v); sconce(x === -1 ? -1 : x + 2, 1.9, -30.1, 's', v); }
+  // dimmer, patchier pools (same positions/reach, so the blackout chase reads exactly as before); the north sconce at x=18 is a dead bulb
+  for (const x of [-1, 8, 18, 26]) { const v = light(x + 1, 2.0, -31.5, 0xffc98a, 1.3, { dist: 8, group: 'mclean' }); if (x === 18) { const dead = sconce(x, 1.9, -32.9, 'n', null); dead.color.set(0x3a3428); dead.userData.base.set(0x3a3428); } else sconce(x, 1.9, -32.9, 'n', v); sconce(x === -1 ? -1 : x + 2, 1.9, -30.1, 's', v); }
   picture(3, 1.6, -32.9, 'n', 0.8, 0.6, 30); picture(23, 1.6, -30.1, 's', 0.8, 0.6, 190); picture(16, 1.6, -32.9, 'n', 1.0, 0.7, 100);
   label(-5.85, 2.35, -31.5, 0.5, 0.18, ['EXIT'], { w: 128, h: 48, size: 34, bg: '#300', fg: '#ff3b2b', bold: true, glow: 1.5 }, Math.PI / 2);
   windowOn(-5.88, 1.5, -31.5, 'w', 1.0, 1.5, M.navy);
   solidDeco(14.8, 0, -32.9, 16.4, 0.8, -32.45, M.mahogany); // console
   label(16, 2.6, -30.12, 0.8, 0.2, ['GUEST PANTRY'], { w: 256, h: 64, size: 30, bg: '#2a2a2a', fg: '#e0d6c0' }, Math.PI);
   label(32.5, 1.7, -30.12, 1.0, 0.25, ['TERRACE · DuBOSE HOME →'], { w: 384, h: 96, size: 30, bg: '#1c2a4a', fg: '#e8e0c8' }, Math.PI);
+  // ---- gfx pass: grimy McLean. Unique worn carpet + stained drop ceiling, scuffed paint mapped in world space, dingy trim ----
+  { const hc = HALL_CEIL;
+    for (const m of childrenFrom(hallMark)) {
+      if (m.material === M.carpetHall) { m.material = GM.hallCarpet; planarUV(m, (x, y, z) => [(x + 6) / 40, (z + 33) / 3]); }
+      else if (m.material === M.white && m.position.y > 2.5) { m.material = GM.hallCeil; planarUV(m, (x, y, z) => [(x + 6) / 40, (z + 33) / 3]); }
+      else if (m.material === M.cream) { m.material = GM.hallWall; planarUV(m, (x, y, z, ax) => [(ax === 'x' ? z : x) / 9.6, (y - 1.0) / 1.8]); }
+      else if (m.material === M.wains) { m.material = GM.hallWains; planarUV(m, (x, y, z, ax) => [(ax === 'x' ? z : x) / 9.6, y / 0.95]); }
+      else if (m.material === M.trim) { m.material = GM.trim; }
+    }
+    // the sagging, soaked tile hanging out of its slot
+    const [si, sj] = hc.sag; const sx = -6 + si * hc.tile, sz = -30 - (sj + 1) * hc.tile; const sag = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.015, 0.58), GM.sagTile); sag.geometry.translate(0.29, 0, 0); sag.position.set(sx + 0.01, 2.79, sz + 0.3); sag.rotation.z = -0.5; scene.add(sag); }
+  const HB = new Batch(scene), HD = new Decals(scene, GT.decals), HP = new Decals(scene, GT.decals); HP.mat = puddleMat;
+  { const hb = (x0, y0, z0, x1, y1, z1, mat) => HB.add(new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0), mat, new THREE.Matrix4().makeTranslation((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2));
+    const hm = (geo, mat, pos, rot = [0, 0, 0]) => HB.add(geo, mat, new THREE.Matrix4().compose(new THREE.Vector3(...pos), new THREE.Quaternion().setFromEuler(new THREE.Euler(...rot)), new THREE.Vector3(1, 1, 1)));
+    // housekeeping cart against the north wall between 127 and 129: shelves, linen, a vinyl bag, a trash bag, spray bottles
+    { const x0 = 29.0, x1 = 30.6, z0 = -32.88, z1 = -32.32; hb(x0, 0.12, z0, x0 + 0.04, 1.1, z1, GM.cartGray); hb(x1 - 0.04, 0.12, z0, x1, 1.1, z1, GM.cartGray); for (const y of [0.12, 0.55, 1.05]) hb(x0, y, z0, x1, y + 0.05, z1, GM.cartGray);
+      for (let k = 0; k < 8; k++) hm(new THREE.CylinderGeometry(0.06, 0.06, 0.3, 8), GM.towel, [x0 + 0.25 + (k % 4) * 0.16, 1.16 + Math.floor(k / 4) * 0.11, -32.6], [0, 0, Math.PI / 2]); // rolled towels
+      for (let k = 0; k < 3; k++) hb(x0 + 0.1 + k * 0.42, 0.6, z0 + 0.06, x0 + 0.48 + k * 0.42, 0.82, z1 - 0.06, k === 1 ? C(0xd8d4c8) : GM.towel);
+      hb(x0 - 0.42, 0.25, z0 + 0.04, x0, 1.05, z1 - 0.02, GM.vinyl); hm(new THREE.SphereGeometry(0.26, 8, 6), GM.trashBag, [x1 + 0.18, 0.55, -32.6], [0, 0, 0]); hm(new THREE.CylinderGeometry(0.21, 0.16, 0.5, 8), GM.trashBag, [x1 + 0.18, 0.3, -32.6]);
+      for (let k = 0; k < 3; k++) { hm(new THREE.CylinderGeometry(0.035, 0.035, 0.2, 6), [C(0x3a7ac8), C(0xe8e0c8), C(0x5ab05a)][k], [x0 + 0.3 + k * 0.1, 1.42, -32.45]); }
+      for (const [a, b] of [[x0 + 0.05, z0 + 0.05], [x1 - 0.05, z0 + 0.05], [x0 + 0.05, z1 - 0.05], [x1 - 0.05, z1 - 0.05]]) hm(new THREE.CylinderGeometry(0.05, 0.05, 0.04, 8), GM.rubber, [a, 0.05, b], [Math.PI / 2, 0, 0]);
+      W.colliders.push({ x0: x0 - 0.45, x1: x1 + 0.45, z0: -32.95, z1: -32.3, y0: 0, y1: 1.2 }); HD.add(29.8, 0.003, -32.55, 'up', 2.6, 0.9, 13); }
+    // wet-floor A-frame by the guest pantry
+    { const c = document.createElement('canvas'); c.width = 64; c.height = 96; const g = c.getContext('2d'); g.fillStyle = '#e0b21e'; g.fillRect(0, 0, 64, 96); g.fillStyle = '#111'; g.font = 'bold 11px Arial'; g.textAlign = 'center'; g.fillText('CAUTION', 32, 20); g.fillText('WET', 32, 70); g.fillText('FLOOR', 32, 83);
+      g.beginPath(); g.moveTo(32, 28); g.lineTo(50, 58); g.lineTo(14, 58); g.closePath(); g.lineWidth = 2; g.stroke(); g.fillRect(30, 36, 4, 12); g.fillRect(30, 51, 4, 3);
+      for (let i = 0; i < 300; i++) { g.fillStyle = `rgba(60,50,20,${Math.random() * 0.25})`; g.fillRect(Math.random() * 64, Math.random() * 96, 1, 1); }
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.NearestFilter; const sm = new THREE.MeshLambertMaterial({ map: t });
+      for (const sgn of [-1, 1]) { const g2 = new THREE.BoxGeometry(0.3, 0.62, 0.012); hm(g2, sm, [13.75, 0.3, -30.55 + sgn * 0.09], [sgn * 0.28, 0.3, 0]); } HD.add(13.75, 0.003, -30.55, 'up', 0.6, 0.6, 13); }
+    // extension cord from the south wall outlet, across the carpet, to an upright vacuum someone left
+    { hb(5.12, 0.28, -30.11, 5.2, 0.4, -30.09, C(0xe8e4d8)); const pts = [[5.16, -30.12], [5.3, -30.4], [5.1, -30.9], [5.6, -31.4], [6.0, -31.6], [5.8, -32.1], [6.3, -32.4], [6.55, -32.5]];
+      for (let i = 0; i < pts.length - 1; i++) { const [ax, az] = pts[i], [bx2, bz] = pts[i + 1]; const L2 = Math.hypot(bx2 - ax, bz - az); hm(new THREE.BoxGeometry(L2 + 0.02, 0.012, 0.014), GM.cord, [(ax + bx2) / 2, 0.006, (az + bz) / 2], [0, -Math.atan2(bz - az, bx2 - ax), 0]); }
+      hm(new THREE.BoxGeometry(0.3, 0.12, 0.3), C(0x6a2a2a), [6.65, 0.08, -32.55]); hm(new THREE.CylinderGeometry(0.09, 0.08, 0.62, 8), C(0x8a8a86), [6.66, 0.5, -32.62], [-0.12, 0, 0]); hm(new THREE.CylinderGeometry(0.015, 0.015, 0.5, 6), GM.chrome, [6.66, 1.05, -32.68], [-0.12, 0, 0]); hm(new THREE.BoxGeometry(0.22, 0.03, 0.03), GM.rubber, [6.66, 1.3, -32.71]); HD.add(6.65, 0.003, -32.55, 'up', 0.6, 0.5, 13); }
+    // room-service tray left outside 107
+    { hm(new THREE.BoxGeometry(0.46, 0.02, 0.34), C(0x2a2522), [12.5, 0.01, -32.55], [0, 0.2, 0]); hm(new THREE.CylinderGeometry(0.11, 0.1, 0.015, 12), GM.towel, [12.42, 0.028, -32.55]); hm(new THREE.SphereGeometry(0.1, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), GM.chrome, [12.42, 0.035, -32.55]);
+      hm(new THREE.CylinderGeometry(0.03, 0.025, 0.1, 8), C(0xc8d0d4), [12.64, 0.07, -32.48]); hm(new THREE.BoxGeometry(0.1, 0.005, 0.14), GM.towel, [12.62, 0.025, -32.65], [0, 0.6, 0]); HD.add(12.5, 0.003, -32.55, 'up', 0.7, 0.6, 13); } }
+  // decals: contact shadows at every wall base / under the crown, leak streaks under the stained tiles, scuffs, hand smudges on the doors, mildew in the corners
+  { const off = 0.022; const wb = (x0, z0, x1, z1, face) => { const d = { n: [0, off], s: [0, -off], e: [-off, 0], w: [off, 0] }[face]; HD.wallBase(x0 + d[0], z0 + d[1], x1 + d[0], z1 + d[1], face, 0, 0.3, 0.32); };
+    for (const [a, b] of [[-5.9, 23.4], [24.6, 33.9]]) { wb(a, -32.9, b, -32.9, 'n'); HD.wallTop(a, -32.9, b, -32.9, 'n', 2.68, 0.35); }
+    for (const [a, b] of [[-5.9, 0.18], [2.82, 8.48], [9.92, 14.38], [17.62, 33.9]]) { wb(a, -30.1, b, -30.1, 's'); HD.wallTop(a, -30.1, b, -30.1, 's', 2.68, 0.35); }
+    wb(-5.9, -32.9, -5.9, -30.1, 'w'); HD.wallTop(-5.9, -32.9, -5.9, -30.1, 'w', 2.68, 0.35); for (const [a, b] of [[-32.9, -32.22], [-30.78, -30.1]]) { wb(33.9, a, 33.9, b, 'e'); HD.wallTop(33.9, a, 33.9, b, 'e', 2.68, 0.35); }
+    const hc = HALL_CEIL; for (const [i, j] of hc.leak) { const x = -6 + (i + 0.5) * hc.tile; if (j === 0) HD.add(x, 2.3, -30.1, 's', 0.6, 0.75, 1); if (j === 4) HD.add(x, 2.3, -32.9, 'n', 0.6, 0.75, 1); }
+    HD.add(5.34, 2.25, -30.1, 's', 1.4, 0.85, 15); HP.add(5.34, 0.004, -30.55, 'up', 1.2, 0.8, 11, 0.4); HD.add(5.34, 2.79, -30.9, 'down', 1.8, 1.4, 15);
+    for (const [x, face] of [[-4.2, 'n'], [2.4, 'n'], [7.6, 'n'], [10.5, 's'], [13.4, 'n'], [19.3, 's'], [22.4, 'n'], [26.6, 's'], [30.0, 'n'], [32.6, 'n']]) { const z = face === 'n' ? -32.9 : -30.1; HD.add(x, 1.18, z, face, 1.1, 0.3, 2); HD.add(x + 0.7, 0.32, z + (face === 'n' ? off : -off), face, 0.9, 0.3, 2); }
+    for (const x of [-3, 1, 5, 12, 20, 28, 31.5]) HD.add(x + 0.36, 1.05, -32.9 + 0.024, 'n', 0.32, 0.4, 3); for (const x of [12, 21, 25, 29]) HD.add(x + 0.36, 1.05, -30.1 - 0.024, 's', 0.32, 0.4, 3, 0, true);
+    HD.add(-5.9, 2.45, -32.6, 'w', 0.7, 0.7, 4, Math.PI / 2); HD.add(-5.9, 2.45, -30.4, 'w', 0.7, 0.7, 4, Math.PI); HD.add(33.9, 2.45, -32.6, 'e', 0.6, 0.6, 4, -Math.PI / 2);
+    HD.add(18.9, 0.004, -31.1, 'up', 0.22, 0.28, 14, 1.1); HD.add(27.2, 0.004, -30.8, 'up', 0.7, 0.7, 5, 0.3); HD.add(-2.1, 0.004, -31.8, 'up', 0.8, 0.6, 5, 1.8); }
+  W.hallDecals = [HD.flush(), HP.flush()]; W.hallBatched = HB.flush({ name: 'hallClutter' });
 
   // =====================================================================
   // GUEST PANTRY x[14,18] z[-30,-25] (ice machine WO-1)
@@ -560,15 +724,13 @@ export function buildWorld(scene, T) {
   box(34, 0, -38.6, 48, 3, -38.2, new THREE.MeshBasicMaterial({ visible: false }), { occ: false }); box(34, 0, -24.8, 48, 3, -24.4, new THREE.MeshBasicMaterial({ visible: false }), { occ: false });
   deco(34.2, 0.8, -38.2, 47.8, 1.3, -37.8, M.hedge); deco(34.2, 0.8, -25.2, 47.8, 1.3, -24.8, M.hedge);
   // lamp posts
-  for (const [x, z] of [[38, -26], [44, -37]]) { cyl(x, 0, z, 0.06, 3, M.black, { solid: true }); const v = light(x, 3.1, z, 0xffcf8a, 4, { dist: 12, group: 'terrace' }); lantern(x, 3.0, z, v, 1.3); }
+  for (const [x, z] of [[38, -26], [44, -37]]) { cyl(x, 0, z, 0.06, 3, M.black, { solid: true }); const v = light(x, 3.1, z, 0xffcf8a, 3.2, { dist: 12, group: 'terrace' }); lantern(x, 3.3, z, v, 1.3, null); cyl(x, 2.95, z, 0.1, 0.12, M.black); } // lantern sits on the post (no chain into the sky)
   // pergola/colonnade along the south side (curved terrace hint)
   for (let i = 0; i < 5; i++) { const x = 36 + i * 2.8; cyl(x, 0, -26.2, 0.14, 3.2, M.trim, { solid: true }); } deco(35.6, 3.2, -26.5, 47.6, 3.4, -25.9, M.trim);
   // benches / planters
   solidDeco(39.5, 0, -36.8, 41.5, 0.45, -36.3, M.wood); cyl(42.8, 0, -29, 0.45, 0.6, M.brick, { solid: true }); deco(42.4, 0.6, -29.4, 43.2, 1.1, -28.6, M.hedge);
   // sky + trees + distant campus glow
-  { const g = new THREE.SphereGeometry(200, 16, 8); const col = []; const p = g.attributes.position; for (let i = 0; i < p.count; i++) { const y = p.getY(i) / 200; const c = new THREE.Color().setHSL(0.62, 0.35, Math.max(0.012, 0.06 - y * 0.06)); col.push(c.r, c.g, c.b); } g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-    const sky = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false })); sky.position.set(41, 0, -31); scene.add(sky);
-    const sm = new THREE.MeshBasicMaterial({ color: 0x9aa4b8, fog: false }); for (let i = 0; i < 120; i++) { const a = Math.random() * Math.PI * 2, e = 0.15 + Math.random() * 1.2; const s = new THREE.Mesh(new THREE.SphereGeometry(0.25 + Math.random() * 0.3, 4, 3), sm); s.position.set(41 + Math.cos(a) * Math.cos(e) * 180, Math.sin(e) * 180, -31 + Math.sin(a) * Math.cos(e) * 180); scene.add(s); }
+  { // (the terrace's own sky dome + 120 star meshes were replaced by the shared camera-following night sky in gfx.js: same moon over the dock and the terrace)
     const tm = new THREE.MeshBasicMaterial({ color: 0x030504 }); for (let i = 0; i < 26; i++) { const side = i % 2 ? -1 : 1; const x = 30 + Math.random() * (side > 0 ? 24 : 15), z = side > 0 ? -22 + Math.random() * -0 + 4 + Math.random() * 10 : -42 - Math.random() * 12; const h = 9 + Math.random() * 9; const t = new THREE.Mesh(new THREE.ConeGeometry(2 + Math.random() * 2, h, 7), tm); t.position.set(x, h / 2, z); scene.add(t); } }
 
   // =====================================================================
@@ -631,7 +793,7 @@ export function buildWorld(scene, T) {
     solidDeco(69.6, DY, -22.5, 72.4, DY + 0.85, -22.1, M.mahogany); deco(70.2, DY + 1.2, -22.12, 71.8, DY + 2.4, -22.1, M.nightGlass); deco(70.1, DY + 1.1, -22.13, 71.9, DY + 2.55, -22.11, M.brass);
     windowOn(68, DY + 1.8, -22.1, 's', 1.0, 2.2); windowOn(75.0, DY + 1.8, -22.1, 's', 1.0, 2.2);
     fakeDoor(73.5, -22.1, 's', null, { mat: M.trim, msg: 'Front door. Alarmed after 11. Don\'t.' }).position.y = DY + 1.075; }
-  { const v = light(71.5, DY + 4.4, -32, 0xffd090, 3.5, { dist: 14, group: 'dubose' }); lantern(71.5, DY + 4.4, -32, v, 2.2);
+  { const v = light(71.5, DY + 4.4, -32, 0xffd090, 3.5, { dist: 14, group: 'dubose' }); lantern(71.5, DY + 4.4, -32, v, 2.2, DY + 7);
     const v2 = light(70, DY + 2.5, -22.4, 0xffc070, 1.6, { dist: 7, group: 'dubose' }); sconce(68.9, DY + 2.3, -22.1, 's', v2); sconce(72.9, DY + 2.3, -22.1, 's', v2); }
   // the formal stair: rises north along the east wall to a balcony along the north wall; flared bottom steps
   { const N = 18, rise = 3.4 / N, xC = 76.7, zStart = -33.6, depth = 0.31, sw = 1.5;
@@ -686,7 +848,7 @@ export function buildWorld(scene, T) {
     deco(x - 0.22, y, z - 0.22, x + 0.22, y + 0.32, z + 0.22, M.red); W.colliders.push({ x0: x - 0.6, x1: x + 0.6, z0: z - 0.6, z1: z + 0.6, y0: y, y1: y + 2.2 });
     const rAt = h => { let r = 0.05; for (const [cr, b] of cones) if (h >= b && h <= b + 0.95) r = Math.max(r, cr * (1 - (h - b) / 0.95)); return r; };
     const tl = light(x, y + 1.2, z + 0.5, 0xffc070, 0.5, { dist: 3.5, group: 'dubose' }); const cols = [0xffc870, 0xff5a40, 0x6aa0ff, 0x7aff90];
-    for (let i = 0; i < 26; i++) { const h = 0.4 + (i / 26) * 1.7, a = i * 2.39; const r = rAt(h) + 0.02; const gm = glowMat(cols[i % 4]); const b = new THREE.Mesh(new THREE.SphereGeometry(0.026, 5, 4), gm); b.position.set(x + Math.cos(a) * r, y + h, z + Math.sin(a) * r); scene.add(b); tl.fixtures.push(gm); }
+    const gms = cols.map(c => glowMat(c)); tl.fixtures.push(...gms); for (let i = 0; i < 26; i++) { const h = 0.4 + (i / 26) * 1.7, a = i * 2.39; const r = rAt(h) + 0.02; const b = new THREE.Mesh(new THREE.SphereGeometry(0.026, 5, 4), gms[i % 4]); b.position.set(x + Math.cos(a) * r, y + h, z + Math.sin(a) * r); scene.add(b); }
     const star = glowMat(0xffe0a0); const st = new THREE.Mesh(new THREE.OctahedronGeometry(0.07), star); st.position.set(x, y + 2.28, z); scene.add(st); tl.fixtures.push(star); }
   function wreath(x, y, z, rotY, s = 1) {
     const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = rotY; scene.add(g);
@@ -897,7 +1059,7 @@ export function buildWorld(scene, T) {
     deco(x - 0.22, y, z - 0.22, x + 0.22, y + 0.32, z + 0.22, M.red); W.colliders.push({ x0: x - 0.65, x1: x + 0.65, z0: z - 0.65, z1: z + 0.65, y0: y, y1: y + 2.3 });
     const rAt = h => { let r = 0.05; for (const [cr, b] of cones) if (h >= b && h <= b + 1.0) r = Math.max(r, cr * (1 - (h - b) / 1.0)); return r; };
     const tl = light(x + 0.4, y + 1.2, z - 0.4, 0xffc070, 0.6, { dist: 3.5, group: 'lobby' }); const cols = [0xffc870, 0xff5a40, 0x6aa0ff, 0x7aff90];
-    for (let i = 0; i < 28; i++) { const h = 0.4 + (i / 28) * 1.8, a = i * 2.39; const r = rAt(h) + 0.02; const gm = glowMat(cols[i % 4]); const b = new THREE.Mesh(new THREE.SphereGeometry(0.026, 5, 4), gm); b.position.set(x + Math.cos(a) * r, y + h, z + Math.sin(a) * r); scene.add(b); tl.fixtures.push(gm); }
+    const gms = cols.map(c => glowMat(c)); tl.fixtures.push(...gms); for (let i = 0; i < 28; i++) { const h = 0.4 + (i / 28) * 1.8, a = i * 2.39; const r = rAt(h) + 0.02; const b = new THREE.Mesh(new THREE.SphereGeometry(0.026, 5, 4), gms[i % 4]); b.position.set(x + Math.cos(a) * r, y + h, z + Math.sin(a) * r); scene.add(b); }
     const star = glowMat(0xffe0a0); const st = new THREE.Mesh(new THREE.OctahedronGeometry(0.07), star); st.position.set(x, y + 2.38, z); scene.add(st); tl.fixtures.push(star);
     // bell cart parked by the east wall
     { const bx = 6.4, bz = -27.4; solidDeco(bx - 0.4, 0.12, bz - 0.7, bx + 0.4, 0.18, bz + 0.7, L(T.carpetRoom, 1, 0x7a2020)); for (const sz of [-0.62, 0.62]) { cyl(bx, 0.18, bz + sz, 0.02, 1.7, M.brass); } deco(bx - 0.02, 1.86, bz - 0.64, bx + 0.02, 1.9, bz + 0.64, M.brass);
@@ -919,8 +1081,96 @@ export function buildWorld(scene, T) {
     const pb = deco(x - 0.5, 1.08, -3.5, x - 0.47, 1.16, -3.42, C(0x2a8a3a)); label(x - 0.472, 1.2, -3.46, 0.12, 0.04, ['CLOSE'], { w: 96, h: 32, size: 22, bg: '#ddd', fg: '#111', bold: true }, -Math.PI / 2);
     W.mdpMesh = deco(x - 0.95, 0.6, -4.25, x, 2.05, -3.05, new THREE.MeshBasicMaterial({ visible: false })); W.anchors.mdp = new THREE.Vector3(x - 0.5, 1.3, -3.65); }
 
+  // =====================================================================
+  // NIGHT TWO ADDITIONS (present in both nights; only night two uses them): Lady DuBose's portrait over the library fireplace,
+  // a toilet + shower in the Room 117 bath, a plunger in the shop, a cable box in the DuBose Suite, and MECH 1, the boiler room off the dock.
+  // =====================================================================
+  { // ---- the portrait: original procedural oil painting (portrait.js), gilt frame, a little brass picture light ----
+    const P = W.portrait = makePortrait(); const x = 50.22, y = DY + 2.17, z = -36.5;
+    const pm = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 1.0), new THREE.MeshLambertMaterial({ map: P.tex })); pm.position.set(x, y, z); pm.rotation.y = Math.PI / 2; scene.add(pm); P.mesh = pm;
+    const gilt = C(0x8a6a2a), giltD = C(0x4a3614);
+    for (const [y0, y1, z0, z1] of [[y + 0.5, y + 0.6, z - 0.5, z + 0.5], [y - 0.6, y - 0.5, z - 0.5, z + 0.5], [y - 0.6, y + 0.6, z - 0.5, z - 0.4], [y - 0.6, y + 0.6, z + 0.4, z + 0.5]]) { deco(50.12, y0, z0, 50.25, y1, z1, gilt); deco(50.2, y0 + 0.02, z0 + 0.02, 50.27, y1 - 0.02, z1 - 0.02, giltD); }
+    deco(50.12, y - 0.52, z - 0.42, 50.16, y + 0.52, z + 0.42, giltD); // backing over the old mirror
+    const v = W.portraitLight = light(50.5, y + 0.66, z, 0xffd8a0, 0.7, { dist: 2.6, group: 'portrait' }); const pg = glowMat(0xffe6b8);
+    deco(50.12, y + 0.64, z - 0.03, 50.4, y + 0.67, z + 0.03, M.brass); deco(50.34, y + 0.6, z - 0.28, 50.44, y + 0.66, z + 0.28, M.brass); deco(50.35, y + 0.595, z - 0.26, 50.43, y + 0.6, z + 0.26, pg); v.fixtures.push(pg);
+    label(50.2, y - 0.68, z, 0.3, 0.06, ['LADY DuBOSE'], { w: 128, h: 26, size: 15, bg: '#6a5220', fg: '#1a1408', bold: true, font: 'Georgia, serif' }, Math.PI / 2);
+    W.anchors.portrait = new THREE.Vector3(x, y, z); }
+  { // ---- Room 117 bath: toilet on the north wall, shower over the tub ----
+    const x = 25.45, z = -33.35; const wm = C(0xeeece4);
+    solidDeco(x - 0.2, 0.42, -33.3, x + 0.2, 0.82, -33.12, wm); deco(x - 0.22, 0.82, -33.32, x + 0.22, 0.86, -33.1, wm); deco(x + 0.12, 0.74, -33.33, x + 0.18, 0.76, -33.3, GM.chrome); // tank, lid, flush lever
+    const bowl = cyl(x, 0, -33.62, 0.15, 0.4, wm, { r2: 0.2 }); bowl.scale.z = 1.3; cyl(x, 0.4, -33.62, 0.2, 0.03, wm).scale.z = 1.3;
+    W.toiletWater = new THREE.Mesh(new THREE.CircleGeometry(0.15, 14), new THREE.MeshLambertMaterial({ color: 0x5a4a2a })); W.toiletWater.rotation.x = -Math.PI / 2; W.toiletWater.scale.y = 1.3; W.toiletWater.position.set(x, 0.37, -33.62); scene.add(W.toiletWater);
+    W.toiletPlunger = new THREE.Group(); { const st = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.8, 6), GM.pwood); st.position.y = 0.48; const cup = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), C(0x8a1c14)); cup.position.y = 0.08; W.toiletPlunger.add(st, cup); }
+    W.toiletPlunger.position.set(x, 0.3, -33.62); W.toiletPlunger.visible = false; scene.add(W.toiletPlunger);
+    W.toiletMesh = deco(x - 0.3, 0, -33.95, x + 0.3, 0.9, -33.1, new THREE.MeshBasicMaterial({ visible: false })); W.colliders.push({ x0: x - 0.22, x1: x + 0.22, z0: -33.85, z1: -33.1, y0: 0, y1: 0.85 });
+    W.anchors.toilet = new THREE.Vector3(x, 0.5, -33.6);
+    // shower: riser + head on the south wall over the tub, mixing valve, a curtain on a rod
+    deco(25.32, 0.6, -35.6, 25.36, 1.95, -35.56, GM.chrome); deco(25.3, 1.9, -35.6, 25.38, 1.94, -35.42, GM.chrome); cyl(25.34, 1.86, -35.42, 0.05, 0.05, GM.chrome, { r2: 0.03 });
+    cyl(25.75, 1.05, -35.58, 0.06, 0.02, GM.chrome).rotation.x = Math.PI / 2; deco(25.73, 1.04, -35.56, 25.77, 1.06, -35.48, GM.chrome); // valve handle
+    deco(25.05, 2.0, -34.97, 26.48, 2.02, -34.95, GM.chrome); const cur = deco(25.6, 0.6, -34.965, 26.45, 1.99, -34.955, C(0xd8dce0)); cur.userData.curtain = true;
+    W.showerMesh = deco(25.1, 0.4, -35.55, 26.45, 2.0, -34.95, new THREE.MeshBasicMaterial({ visible: false })); W.anchors.shower = new THREE.Vector3(25.4, 1.6, -35.3); }
+  { // ---- shop: a plunger leaning in the SW corner by the wet vac ----
+    const G = W.plungerMesh = new THREE.Group(); const st = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.85, 6), GM.pwood); st.position.set(0, 0.5, 0); const cup = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), C(0x8a1c14)); cup.position.y = 0.06;
+    G.add(st, cup); G.position.set(1.08, 0, -0.22); G.rotation.z = 0.12; scene.add(G); W.plungerPick = deco(0.9, 0, -0.42, 1.3, 1.0, -0.1, new THREE.MeshBasicMaterial({ visible: false })); }
+  { // ---- DuBose Suite: cable box in front of the TV (input + coax at the back) ----
+    const y = DY + 1.0; solidDeco(66.38, y, -46.02, 66.6, y + 0.055, -45.62, C(0x161616), { solid: false }); W.cableLed = glowMat(0x30ff60); deco(66.6, y + 0.02, -45.7, 66.605, y + 0.03, -45.66, W.cableLed);
+    W.cableMesh = deco(66.32, y - 0.05, -46.1, 66.68, y + 0.2, -45.5, new THREE.MeshBasicMaterial({ visible: false })); }
+  { // ---- MECH 1: the boiler room, west of the dock (door in the dock's west wall). Grimy, one caged bulb, a firetube boiler, the water heater ----
+    room({ x0: -6.8, z0: 6, x1: 0, z1: 12, h: 3.4, floor: M.concrete, ceil: M.concrete, wall: M.blockTan, base: M.hazard, skip: ['e'], surface: 'concrete' });
+    W.doors.boilerDoor = door(0.0, 10.9, 'z', 1.0, { swing: -1, mat: L(T.rollup, 1, 0x5a5f62), locked: true, name: 'boiler', lockedMsg: 'MECH 1 · Boiler room. Nothing on your list in there.' });
+    label(0.14, 2.45, 10.9, 0.5, 0.18, ['MECH 1 · BOILER'], { w: 192, h: 64, size: 20, bg: '#c9a11e', fg: '#111', bold: true }, Math.PI / 2);
+    label(-0.12, 2.45, 10.9, 0.45, 0.16, ['NO OPEN FLAME'], { w: 192, h: 64, size: 20, bg: '#8a1c14', fg: '#eee', bold: true }, -Math.PI / 2);
+    const jacket = L(GT.drum, 0.9, 0x7a2a1e), steelM = GM.steelD, pipeM = C(0x4a4e50), insul = C(0xb8b0a0), redV = C(0x9a1c14);
+    // the boiler: a horizontal firetube shell on saddles, burner on the east end, flue up through the ceiling
+    { const sh = cyl(-3.6, 0, 7.1, 0.85, 3.4, jacket, { seg: 16 }); sh.rotation.z = Math.PI / 2; sh.position.set(-3.6, 1.15, 7.1);
+      for (const x of [-4.8, -2.4]) solidDeco(x - 0.15, 0, 6.4, x + 0.15, 0.5, 7.8, steelM);
+      for (const x of [-5.3, -1.9]) { const r = cyl(x, 1.15, 7.1, 0.87, 0.06, steelM, { seg: 16 }); r.rotation.z = Math.PI / 2; r.position.set(x, 1.15, 7.1); }
+      cyl(-4.6, 2.0, 7.1, 0.2, 1.4, pipeM); cyl(-4.6, 2.0, 7.1, 0.24, 0.08, steelM); // flue
+      solidDeco(-1.9, 0.45, 6.65, -1.3, 1.55, 7.55, C(0x2a3a4a)); deco(-1.32, 0.6, 6.75, -1.29, 1.45, 7.45, C(0x1a2630)); // burner housing
+      W.burnerGlow = glowMat(0x2a0800); deco(-1.29, 0.85, 7.0, -1.28, 0.95, 7.1, W.burnerGlow); // peephole
+      W.lwcoLamp = glowMat(0xff2010); deco(-1.29, 1.3, 7.25, -1.28, 1.36, 7.31, W.lwcoLamp); W.readyLamp = glowMat(0x082008); deco(-1.29, 1.3, 7.36, -1.28, 1.36, 7.42, W.readyLamp);
+      label(-1.285, 1.4, 7.33, 0.24, 0.05, ['LWCO  ·  READY'], { w: 128, h: 26, size: 12, bg: '#ccc', fg: '#111', bold: true }, Math.PI / 2);
+      W.resetBtn = cyl(-1.27, 1.12, 7.32, 0.025, 0.02, C(0xc02010)); W.resetBtn.rotation.z = Math.PI / 2; W.resetBtn.position.set(-1.27, 1.12, 7.32);
+      label(-1.285, 1.06, 7.33, 0.12, 0.035, ['RESET'], { w: 64, h: 18, size: 12, bg: '#111', fg: '#ddd', bold: true }, Math.PI / 2);
+      for (const [zz, yy] of [[6.85, 1.25], [7.05, 1.25]]) { const g = cyl(-1.27, yy, zz, 0.06, 0.02, C(0xe8e4d8), { seg: 14 }); g.rotation.z = Math.PI / 2; g.position.set(-1.27, yy, zz); deco(-1.26, yy - 0.002, zz - 0.04, -1.258, yy + 0.002, zz + 0.01, M.black); } // pressure + temp gauges
+      // gauge glass (sight glass) on the shell's east end: water level shows LOW until the feedwater is open
+      deco(-1.86, 0.9, 7.88, -1.83, 1.6, 7.92, GM.chrome); const glass = deco(-1.84, 1.0, 7.86, -1.79, 1.5, 7.94, new THREE.MeshLambertMaterial({ color: 0x9ab0b8, transparent: true, opacity: 0.35 }));
+      W.sightWater = deco(-1.835, 1.0, 7.87, -1.795, 1.5, 7.93, C(0x2a5a6a)); W.sightWater.scale.y = 0.12; W.sightWater.position.y = 1.0 + 0.5 * 0.06;
+      W.colliders.push({ x0: -5.45, x1: -1.25, z0: 6.15, z1: 8.05, y0: 0, y1: 2.2 });
+      W.boilerMesh = deco(-1.6, 0.4, 6.6, -1.1, 1.7, 7.6, new THREE.MeshBasicMaterial({ visible: false })); }
+    // feedwater line with a red handwheel, a makeup-water meter, pipes up the wall and across the ceiling
+    { cyl(-1.0, 0, 8.6, 0.05, 3.4, pipeM); cyl(-1.0, 0.3, 8.6, 0.07, 0.25, steelM); W.valveWheel = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.018, 6, 14), redV); W.valveWheel.position.set(-0.86, 1.25, 8.6); W.valveWheel.rotation.y = Math.PI / 2; scene.add(W.valveWheel);
+      deco(-0.95, 1.22, 8.57, -0.86, 1.28, 8.63, steelM); deco(-1.02, 1.6, 8.0, -0.98, 1.64, 8.6, pipeM); deco(-1.85, 1.6, 7.96, -0.98, 1.64, 8.0, pipeM);
+      W.valveMesh = deco(-1.15, 0.9, 8.3, -0.6, 1.6, 8.9, new THREE.MeshBasicMaterial({ visible: false })); W.colliders.push({ x0: -1.1, x1: -0.9, z0: 8.5, z1: 8.7, y0: 0, y1: 3 });
+      for (const [z, r] of [[6.4, 0.07], [6.7, 0.05], [11.6, 0.06]]) { const p = cyl(-3.4, 3.1, z, r, 6.6, z > 11 ? insul : pipeM); p.rotation.z = Math.PI / 2; p.position.set(-3.4, 3.1 - (z > 11 ? 0.15 : 0), z); }
+      for (const x of [-6.0, -2.0, 0.0]) deco(x - 0.02, 3.15, 6.3, x + 0.02, 3.4, 6.8, steelM); }
+    // water heater (the guest-room domestic hot water) in the NW corner, an expansion tank, two circulator pumps, a floor drain
+    { cyl(-6.15, 0, 11.35, 0.36, 1.7, C(0x8a8e88), { solid: true, seg: 14 }); cyl(-6.15, 1.7, 11.35, 0.3, 0.08, C(0x6a6e68)); cyl(-6.0, 1.78, 11.2, 0.04, 1.5, pipeM); cyl(-6.3, 1.78, 11.5, 0.04, 1.5, insul);
+      label(-5.78, 1.1, 11.35, 0.22, 0.3, ['DHW-1', '119 GAL', 'SET 140°F'], { w: 96, h: 128, size: 14, bg: '#e8e4d0', fg: '#222', bold: true }, Math.PI / 2);
+      const ex = cyl(-5.2, 2.4, 11.6, 0.2, 0.6, C(0x9aa0a3)); ex.rotation.x = Math.PI / 2; ex.position.set(-5.2, 2.6, 11.6);
+      for (const z of [9.4, 10.2]) { cyl(-6.55, 0.9, z, 0.1, 0.22, C(0x2a5a8a)); cyl(-6.55, 1.12, z, 0.03, 2.2, pipeM); }
+      cyl(-3.2, 0.001, 9.6, 0.12, 0.01, M.darkSteel); solidDeco(-6.75, 0, 8.8, -6.4, 1.4, 9.0, steelM, { solid: false }); }
+    // shelving with filters, chemical pails, a mop sink; one caged bulb on a cord
+    { solidDeco(-3.0, 0, 11.55, -1.2, 1.9, 11.95, steelM); for (let s = 0; s < 4; s++) deco(-2.98, 0.15 + s * 0.55, 11.56, -1.22, 0.19 + s * 0.55, 11.94, steelM);
+      for (const [x, y, c] of [[-2.7, 0.19, 0x2a5a8a], [-2.3, 0.19, 0xc9a11e], [-1.8, 0.74, 0xd8d4c8], [-2.6, 1.29, 0x5a5a5a], [-1.6, 0.19, 0x2a5a8a]]) cyl(x, y, 11.75, 0.13, 0.32, C(c));
+      solidDeco(-5.2, 0, 11.4, -4.4, 0.35, 11.95, C(0x8a8a84)); 
+      const v = W.boilerBulb = light(-3.3, 2.75, 9.6, 0xffc890, 2.6, { dist: 9, group: 'boiler', flicker: 0.04 }); const bg = glowMat(0xffd8a0); W.boilerBulbMat = bg;
+      deco(-3.31, 2.95, 9.59, -3.29, 3.4, 9.61, M.black); const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), bg); bulb.position.set(-3.3, 2.88, 9.6); scene.add(bulb); v.fixtures.push(bg);
+      const cage = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.2, 8, 1, true), new THREE.MeshBasicMaterial({ color: 0x222222, wireframe: true })); cage.position.set(-3.3, 2.88, 9.6); scene.add(cage);
+      W.burnerLight = light(-0.9, 0.9, 7.1, 0xff7a20, 0, { dist: 4, group: 'boilerFire', on: false });
+      W.anchors.boiler = new THREE.Vector3(-1.4, 1.0, 7.1); W.anchors.boilerRoom = new THREE.Vector3(-3.4, 1.5, 9.5); }
+  }
+  // ---------- gfx pass: merge static, unreferenced meshes in the dock + McLean hall (draw calls) ----------
+  // ---------- gfx pass 2: grimy world-mapped materials everywhere else, auto decals in every other room, clutter, then batch ----------
+  W.gfx2 = { regrimed: regrime(scene, W, T) };
+  W.gfx2.decals = roomDecals(scene, W, W.rooms, r => (r.x0 === 0 && r.z0 === 0 && r.x1 === 16) || (r.x0 === -6 && r.z0 === -33 && r.x1 === 34));
+  W.gfx2.clutter = clutter2(scene, W, { L, C, GM, GT, puddleMat });
+  W.gfx2.flattened = flattenGroups(scene, W);
+  W.gfxMerge = [mergeStatic(scene, W, { x0: -0.5, x1: 16.5, z0: -0.5, z1: 12.6, y0: -1, y1: 8 }, { name: 'dockStatic' }), mergeStatic(scene, W, { x0: -6.5, x1: 34.5, z0: -33.3, z1: -29.95, y0: -1, y1: 3.2 }, { name: 'hallStatic' }),
+    mergeCells(scene, W, { cell: 16, name: 'cellStatic' })]; // everything else static, walls too (same safety rules) // everything else static (same safety rules)
   // ---------- region tags for gameplay ----------
   W.regions = [
+    { name: 'boiler', x0: -6.8, x1: -0.01, z0: 6, z1: 12 },
     { name: 'closet', x0: 58, x1: 60, z0: -46, z1: -43 }, { name: 'sewing', x0: 58, x1: 66, z0: -50, z1: -43 }, { name: 'bar', x0: 50, x1: 58, z0: -50, z1: -43 },
     { name: 'backhall', x0: 54, x1: 65.95, z0: -43, z1: -40 }, { name: 'bath117', x0: 24.95, x1: 26.6, z0: -35.6, z1: -33 }, { name: 'room117', x0: 21.8, x1: 26.6, z0: -38.4, z1: -33.02 },
     { name: 'dock', x0: 0, x1: 16, z0: 0, z1: 12 }, { name: 'lot', x0: 16.06, x1: 52, z0: -1, z1: 38 }, { name: 'office', x0: 0, x1: 6, z0: -5, z1: 0 }, { name: 'corridor', x0: 8, x1: 10.4, z0: -30, z1: 0 },

@@ -51,6 +51,21 @@ Q or RIGHT MOUSE (hold, next to a closed door): peek through the crack. 173 can'
 Checkpoints: power-out (A), breaker (B), after the slam in the bar (E), back in McLean for WO-4474 (F), the blackout just outside the lobby
 (G: retries the chase, not the conversation), and clock-out after MDP-1 (H: dock lit, clock-out objective). Restart shift reloads (Clint plays again).
 
+## Night two (Christmas night)
+Finish night one and the title (and the end card) offer **Night 2**. Same building, same job, a full shift: 10:58 PM Dec 25 to 7 AM Dec 26.
+1. 10:58 PM, loading dock. Clock in, grab the radio. Dee has three guest calls before midnight.
+2. WO-4481: Room 117 toilet clogged to the rim. Plunger from the shop (by the wet vac); hold E to plunge, then flush to test.
+3. 12:52 AM. WO-4482: the DuBose Suite TV is all snow. Check the cable box, switch the input to HDMI 2, tighten the loose coax.
+   Picture's back... then it goes to snow on its own and hums at you.
+4. Lady DuBose's portrait hangs over the library fireplace. Her eyes follow you. Look away and she isn't quite where she was.
+5. 2:47 AM. WO-4483: no hot water in 117. Dee buzzes open MECH 1, the boiler room off the dock's west wall (by the time clock).
+   Low-water cutoff tripped: open the feedwater valve, press RESET, the burner lights... and the bulb pops.
+6. 4:16 AM. WO-4484: low temp in the DuBose library, damper left open. The painting is empty. Close the damper and she steps out:
+   she drifts slowly while you watch her and quickly when you don't. Back out of the house and shut a door on her. (Checkpoint N2D.)
+7. 6:57 AM. Clock out at 7 (checkpoint N2H). Clint comes in through the lot door, still sore about the double, and he is not ready for any
+   stories: go home, get some rest. Walk out into the lot. End card: Tape 2.
+No 173 on night two. Lady DuBose's portrait is an original procedural painting generated in code (`src/portrait.js`); no photo is used.
+
 ## Credits / licensing
 - SCP-173 concept from the SCP Wiki (https://scp-wiki.wikidot.com/scp-173), CC BY-SA 3.0. Fan work.
 - The statue here is an original design (not the original sculpture). All geometry, textures (canvas-generated) and
@@ -74,4 +89,5 @@ Checkpoints: power-out (A), breaker (B), after the slam in the bar (E), back in 
 - `node clint-test.mjs`: focused test of the 10:58 opening (Clint on the dock, clock-in held, grumble, exit through the lot door, clock-in opens, 7/7 takes voiced). `SHOTS=1` writes `screenshots/clint-*.png`.
 - `node ending-test.mjs`: focused test of the 6:51 ending (desk state, turn-in, Merry Christmas, blackout threshold, no answer from Dee, flicker + song, fair-bot run, MDP-1 is not the end, clock-out, full blackout + humming, Chris (look, 7/7 voiced lines), lot door, sunrise, end card, checkpoint G retries). `SHOTS=1` writes `screenshots/ending-*.png`. `URL=` picks the server.
 - `node voice-fallback-test.mjs`: every mp3 404s: radio lines squelch; Clint, Dee in person and Chris show subtitles only, with no radio hiss and no soft-lock.
-- Lady DuBose's haunt is audio + atmosphere only: an original synthesized hummed lullaby (not any existing song/carol), a single short distant cry, cold, an empty bar, slamming doors. Nothing is shown. The same lullaby follows 173 during the 6:51 blackout, and plays once more in the dark after you clock out.
+- Night one: Lady DuBose's haunt is audio + atmosphere only: an original synthesized hummed lullaby (not any existing song/carol), a single short distant cry, cold, an empty bar, slamming doors. Nothing is shown. The same lullaby follows 173 during the 6:51 blackout, and plays once more in the dark after you clock out.
+- Night two voices (`audio/n2/`, map in `src/n2-lines.js`): Dee = Piper `en_US-kristin-medium` (radio-processed), Clint = Piper `en_US-joe-medium` (in person). Synthetic; not recordings or clones of anyone. Lady DuBose's hum is an original synthesized tune.
